@@ -1,0 +1,8 @@
+.vs/
+Source/bin/
+Source/obj/
+*.user
+*.suo
+*.pdb
+Thumbs.db
+Desktop.ini

@@ -25,7 +25,7 @@ namespace ResearchTotal
     {
         public static void Prefix(ResearchProjectDef proj)
         {
-            if (proj == null || proj.baseCost <= 0f)
+            if (proj == null || !ResearchTotalEngine.IsIncluded(proj))
             {
                 return;
             }
@@ -36,7 +36,7 @@ namespace ResearchTotal
 
         public static void Postfix(ResearchProjectDef proj, Dictionary<ResearchProjectDef, float> ___progress)
         {
-            if (proj == null || proj.baseCost <= 0f || ___progress == null)
+            if (proj == null || !ResearchTotalEngine.IsIncluded(proj) || ___progress == null)
             {
                 return;
             }
@@ -44,7 +44,7 @@ namespace ResearchTotal
             float cost = ResearchTotalEngine.GetScaledCost(proj);
             if (cost <= 0f)
             {
-                cost = proj.baseCost;
+                cost = ResearchTotalEngine.OriginalCost(proj);
             }
 
             ___progress[proj] = cost;

@@ -3,7 +3,7 @@
   <name>Research: Total</name>
   <author>Cruesoe</author>
   <packageId>cruesoe.research.total</packageId>
-  <modVersion IgnoreIfNoMatchingField="True">0.1.0</modVersion>
+  <modVersion IgnoreIfNoMatchingField="True">0.2.0</modVersion>
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
@@ -23,6 +23,8 @@ How it works
 Each tech keeps its vanilla proportions, then era weights decide how much of the remaining budget that era gets. Later eras take a larger share by default (Neolithic 1.0, Medieval 1.15, Industrial 1.5, Spacer 2.0, Ultra 2.5) because research gets faster as you unlock better benches. You can change those weights in settings.
 
 Vanilla's tech-level penalty still applies: researching ahead of your colony's tech level takes longer. If you use a mod that raises your faction tech level (for example Tech Advancing), finished techs keep the cost they already had. Unfinished techs are recosted so whatever budget is left still adds up to your total.
+
+Anomaly dark study is separate. Those projects cost knowledge from studying entities, not bench research points, so they are not part of the main total. Vanilla Anomaly is about 1,280 knowledge for the whole tree. Set a knowledge target in the Anomaly section; Basic and Advanced keep their own weights, and the usual tech-level penalty does not apply.
 
 Incompatible with Research Inflation. I recommend you start a new game; you may get some weird costs if you don't, but it won't break anything.
 

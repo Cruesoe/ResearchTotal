@@ -13,6 +13,11 @@ namespace ResearchTotal
         public float eraSpacer = 2.00f;
         public float eraUltra = 2.50f;
 
+        public float targetAnomalyPoints = 5000f;
+        public float roundAnomalyTo = 1f;
+        public float anomalyBasic = 1.00f;
+        public float anomalyAdvanced = 1.50f;
+
         public void ResetToDefaults()
         {
             targetPoints = 1000000f;
@@ -22,6 +27,10 @@ namespace ResearchTotal
             eraIndustrial = 1.50f;
             eraSpacer = 2.00f;
             eraUltra = 2.50f;
+            targetAnomalyPoints = 5000f;
+            roundAnomalyTo = 1f;
+            anomalyBasic = 1.00f;
+            anomalyAdvanced = 1.50f;
         }
 
         public override void ExposeData()
@@ -34,6 +43,10 @@ namespace ResearchTotal
             Scribe_Values.Look(ref eraIndustrial, "eraIndustrial", 1.50f);
             Scribe_Values.Look(ref eraSpacer, "eraSpacer", 2.00f);
             Scribe_Values.Look(ref eraUltra, "eraUltra", 2.50f);
+            Scribe_Values.Look(ref targetAnomalyPoints, "targetAnomalyPoints", 5000f);
+            Scribe_Values.Look(ref roundAnomalyTo, "roundAnomalyTo", 1f);
+            Scribe_Values.Look(ref anomalyBasic, "anomalyBasic", 1.00f);
+            Scribe_Values.Look(ref anomalyAdvanced, "anomalyAdvanced", 1.50f);
 
             if (Scribe.mode == LoadSaveMode.LoadingVars && targetPoints < 0f)
             {
@@ -69,6 +82,23 @@ namespace ResearchTotal
             eraIndustrial = ClampEra(eraIndustrial, 1.50f);
             eraSpacer = ClampEra(eraSpacer, 2.00f);
             eraUltra = ClampEra(eraUltra, 2.50f);
+            anomalyBasic = ClampEra(anomalyBasic, 1.00f);
+            anomalyAdvanced = ClampEra(anomalyAdvanced, 1.50f);
+
+            if (targetAnomalyPoints < 1f)
+            {
+                targetAnomalyPoints = 5000f;
+            }
+
+            if (roundAnomalyTo < 1f)
+            {
+                roundAnomalyTo = 1f;
+            }
+
+            if (roundAnomalyTo > 10000f)
+            {
+                roundAnomalyTo = 10000f;
+            }
         }
 
         public static float ClampEra(float value, float fallback)

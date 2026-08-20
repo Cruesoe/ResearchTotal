@@ -7,6 +7,7 @@ namespace ResearchTotal
     public class GameComponent_ResearchTotal : GameComponent
     {
         public float spentApparent;
+        public float spentAnomaly;
         public TechLevel lastTechLevel = TechLevel.Undefined;
         public bool ready;
         public Dictionary<ResearchProjectDef, float> assignedCosts = new Dictionary<ResearchProjectDef, float>();
@@ -20,6 +21,7 @@ namespace ResearchTotal
         public override void ExposeData()
         {
             Scribe_Values.Look(ref spentApparent, "spentApparent", 0f);
+            Scribe_Values.Look(ref spentAnomaly, "spentAnomaly", 0f);
             Scribe_Values.Look(ref lastTechLevel, "lastTechLevel", TechLevel.Undefined);
             Scribe_Collections.Look(ref assignedCosts, "assignedCosts", LookMode.Def, LookMode.Value);
             Scribe_Collections.Look(ref finishedProjects, "finishedProjects", LookMode.Def);

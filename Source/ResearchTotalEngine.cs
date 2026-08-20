@@ -38,11 +38,39 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (proj != null && proj.baseCost > 0f)
+                if (proj == null)
+                {
+                    continue;
+                }
+
+                if (IsAnomalyProject(proj))
+                {
+                    if (proj.knowledgeCost > 0f)
+                    {
+                        originalCosts[proj] = proj.knowledgeCost;
+                    }
+                }
+                else if (proj.baseCost > 0f)
                 {
                     originalCosts[proj] = proj.baseCost;
                 }
             }
+        }
+
+        public static bool IsAnomalyProject(ResearchProjectDef proj)
+        {
+            if (proj == null || !ModsConfig.AnomalyActive || proj.knowledgeCategory == null)
+            {
+                return false;
+            }
+
+            return proj.knowledgeCategory == KnowledgeCategoryDefOf.Basic
+                || proj.knowledgeCategory == KnowledgeCategoryDefOf.Advanced;
+        }
+
+        public static bool AnomalyActive()
+        {
+            return ModsConfig.AnomalyActive;
         }
 
         public static void Detach()
@@ -63,7 +91,12 @@ namespace ResearchTotal
                 return cost;
             }
 
-            return proj != null ? proj.baseCost : 0f;
+            if (proj == null)
+            {
+                return 0f;
+            }
+
+            return IsAnomalyProject(proj) ? proj.knowledgeCost : proj.baseCost;
         }
 
         public static float GetScaledCost(ResearchProjectDef proj)
@@ -95,24 +128,24 @@ namespace ResearchTotal
             }
 
             RebuildFinishedSet();
+            DiscoverFinishedFromProgress();
 
-            if (comp.assignedCosts.Count > 0)
+            if (comp.lastTechLevel == TechLevel.Undefined)
             {
-                comp.ready = true;
-                if (comp.lastTechLevel == TechLevel.Undefined)
-                {
-                    comp.lastTechLevel = PlayerTechLevel();
-                }
-
-                SnapFinishedProgress();
-                return;
+                comp.lastTechLevel = PlayerTechLevel();
             }
 
-            DiscoverFinishedFromProgress();
-            comp.spentApparent = 0f;
-            Allocate(CollectIncluded(), EffectiveTarget(), null);
-            CreditExistingFinished();
-            comp.lastTechLevel = PlayerTechLevel();
+            if (!HasAssignedForPool(false))
+            {
+                Allocate(CollectStandard(), EffectiveTarget(), null);
+            }
+
+            if (AnomalyActive() && !HasAssignedForPool(true))
+            {
+                Allocate(CollectAnomaly(), EffectiveAnomalyTarget(), null);
+            }
+
+            RecomputeSpent();
             comp.ready = true;
             SnapFinishedProgress();
         }
@@ -124,17 +157,12 @@ namespace ResearchTotal
                 return;
             }
 
-            List<ResearchProjectDef> remaining = new List<ResearchProjectDef>();
-            ResearchProjectDef frozen = FrozenProject();
-            CollectRemaining(remaining, frozen);
-
-            float remainingBudget = Mathf.Max(0f, EffectiveTarget() - current.spentApparent);
-            if (frozen != null)
+            RecalculatePool(false);
+            if (AnomalyActive())
             {
-                remainingBudget = Mathf.Max(0f, remainingBudget - ApparentOf(frozen));
+                RecalculatePool(true);
             }
 
-            Allocate(remaining, remainingBudget, frozen);
             SnapFinishedProgress();
         }
 
@@ -152,7 +180,8 @@ namespace ResearchTotal
             }
 
             current.lastTechLevel = now;
-            RecalculateRemaining();
+            RecalculatePool(false);
+            SnapFinishedProgress();
         }
 
         public static void NotifyProjectFinished(ResearchProjectDef proj)
@@ -168,7 +197,14 @@ namespace ResearchTotal
                 current.finishedProjects.Add(proj);
             }
 
-            current.spentApparent += ApparentOf(proj);
+            if (IsAnomalyProject(proj))
+            {
+                current.spentAnomaly += ApparentOf(proj);
+            }
+            else
+            {
+                current.spentApparent += ApparentOf(proj);
+            }
         }
 
         public static void NotifyAllProjectsFinished()
@@ -180,6 +216,7 @@ namespace ResearchTotal
 
             List<ResearchProjectDef> all = CollectIncluded();
             current.spentApparent = 0f;
+            current.spentAnomaly = 0f;
             finishedSet.Clear();
             current.finishedProjects.Clear();
             for (int i = 0; i < all.Count; i++)
@@ -187,7 +224,14 @@ namespace ResearchTotal
                 ResearchProjectDef proj = all[i];
                 finishedSet.Add(proj);
                 current.finishedProjects.Add(proj);
-                current.spentApparent += ApparentOf(proj);
+                if (IsAnomalyProject(proj))
+                {
+                    current.spentAnomaly += ApparentOf(proj);
+                }
+                else
+                {
+                    current.spentApparent += ApparentOf(proj);
+                }
             }
         }
 
@@ -201,8 +245,14 @@ namespace ResearchTotal
             finishedSet.Clear();
             current.finishedProjects.Clear();
             current.spentApparent = 0f;
+            current.spentAnomaly = 0f;
             current.assignedCosts.Clear();
-            Allocate(CollectIncluded(), EffectiveTarget(), null);
+            Allocate(CollectStandard(), EffectiveTarget(), null);
+            if (AnomalyActive())
+            {
+                Allocate(CollectAnomaly(), EffectiveAnomalyTarget(), null);
+            }
+
             SnapFinishedProgress();
         }
 
@@ -246,7 +296,7 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj))
+                if (IsIncluded(proj) && !IsAnomalyProject(proj))
                 {
                     total += OriginalCost(proj) * proj.CostFactor(tech);
                 }
@@ -261,7 +311,7 @@ namespace ResearchTotal
             List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
             for (int i = 0; i < all.Count; i++)
             {
-                if (IsIncluded(all[i]))
+                if (IsIncluded(all[i]) && !IsAnomalyProject(all[i]))
                 {
                     count++;
                 }
@@ -283,6 +333,67 @@ namespace ResearchTotal
         public static float EffectiveTarget()
         {
             return Mathf.Clamp(CurrentTarget(), Mathf.Max(1f, VanillaApparentTotal()), MaxBudget);
+        }
+
+        public static float CurrentAnomalyTarget()
+        {
+            if (ResearchTotalMod.settings == null)
+            {
+                return 5000f;
+            }
+
+            return Mathf.Clamp(ResearchTotalMod.settings.targetAnomalyPoints, 1f, MaxBudget);
+        }
+
+        public static float EffectiveAnomalyTarget()
+        {
+            return Mathf.Clamp(CurrentAnomalyTarget(), Mathf.Max(1f, VanillaAnomalyTotal()), MaxBudget);
+        }
+
+        public static float VanillaAnomalyTotal()
+        {
+            if (!AnomalyActive())
+            {
+                return 0f;
+            }
+
+            float total = 0f;
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (IsIncluded(proj) && IsAnomalyProject(proj))
+                {
+                    total += OriginalCost(proj);
+                }
+            }
+
+            return total;
+        }
+
+        public static int AnomalyCount()
+        {
+            if (!AnomalyActive())
+            {
+                return 0;
+            }
+
+            int count = 0;
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (IsIncluded(all[i]) && IsAnomalyProject(all[i]))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        public static float CurrentSpentAnomaly()
+        {
+            return current != null ? current.spentAnomaly : 0f;
         }
 
         public static float EraWeight(ResearchProjectDef proj)
@@ -312,6 +423,79 @@ namespace ResearchTotal
             }
         }
 
+        public static float CategoryWeight(ResearchProjectDef proj)
+        {
+            ResearchTotalSettings s = ResearchTotalMod.settings;
+            if (proj == null || s == null || !AnomalyActive())
+            {
+                return 1f;
+            }
+
+            if (proj.knowledgeCategory == KnowledgeCategoryDefOf.Advanced)
+            {
+                return s.anomalyAdvanced;
+            }
+
+            return s.anomalyBasic;
+        }
+
+        public static List<EraSlice> BuildAnomalySlices()
+        {
+            EraSlice[] buckets =
+            {
+                new EraSlice("Basic"),
+                new EraSlice("Advanced")
+            };
+
+            if (!AnomalyActive())
+            {
+                return new List<EraSlice>();
+            }
+
+            float weightSum = 0f;
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            List<ResearchProjectDef> included = new List<ResearchProjectDef>();
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (!IsIncluded(proj) || !IsAnomalyProject(proj))
+                {
+                    continue;
+                }
+
+                included.Add(proj);
+                weightSum += AllocationWeight(proj, TechLevel.Undefined);
+            }
+
+            float target = EffectiveAnomalyTarget();
+            float step = AnomalyRoundStep();
+            for (int i = 0; i < included.Count; i++)
+            {
+                ResearchProjectDef proj = included[i];
+                EraSlice slice = buckets[AnomalyIndex(proj)];
+                slice.count++;
+                slice.vanilla += OriginalCost(proj);
+                if (weightSum > 0f)
+                {
+                    float share = target * AllocationWeight(proj, TechLevel.Undefined) / weightSum;
+                    float cost = ApplyRounding(share, step);
+                    cost = Mathf.Max(OriginalCost(proj), cost);
+                    slice.scaled += cost;
+                }
+            }
+
+            List<EraSlice> list = new List<EraSlice>(2);
+            for (int i = 0; i < buckets.Length; i++)
+            {
+                if (buckets[i].count > 0)
+                {
+                    list.Add(buckets[i]);
+                }
+            }
+
+            return list;
+        }
+
         public static List<EraSlice> BuildEraSlices()
         {
             EraSlice[] buckets =
@@ -330,7 +514,7 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (!IsIncluded(proj))
+                if (!IsIncluded(proj) || IsAnomalyProject(proj))
                 {
                     continue;
                 }
@@ -383,6 +567,11 @@ namespace ResearchTotal
 
         private static float AllocationWeight(ResearchProjectDef proj, TechLevel colonyTech)
         {
+            if (IsAnomalyProject(proj))
+            {
+                return OriginalCost(proj) * CategoryWeight(proj);
+            }
+
             return OriginalCost(proj) * proj.CostFactor(colonyTech) * EraWeight(proj);
         }
 
@@ -404,6 +593,16 @@ namespace ResearchTotal
             }
         }
 
+        private static int AnomalyIndex(ResearchProjectDef proj)
+        {
+            if (AnomalyActive() && proj != null && proj.knowledgeCategory == KnowledgeCategoryDefOf.Advanced)
+            {
+                return 1;
+            }
+
+            return 0;
+        }
+
         private static float RoundStep()
         {
             if (ResearchTotalMod.settings == null || ResearchTotalMod.settings.roundTo < 1f)
@@ -414,16 +613,85 @@ namespace ResearchTotal
             return Mathf.Clamp(Mathf.Round(ResearchTotalMod.settings.roundTo), 1f, 10000f);
         }
 
-        private static void Allocate(List<ResearchProjectDef> nodes, float budgetApparent, ResearchProjectDef frozen)
+        private static float AnomalyRoundStep()
+        {
+            if (ResearchTotalMod.settings == null || ResearchTotalMod.settings.roundAnomalyTo < 1f)
+            {
+                return 1f;
+            }
+
+            return Mathf.Clamp(Mathf.Round(ResearchTotalMod.settings.roundAnomalyTo), 1f, 10000f);
+        }
+
+        private static float FactorOf(ResearchProjectDef proj, TechLevel tech)
+        {
+            if (IsAnomalyProject(proj))
+            {
+                return 1f;
+            }
+
+            return proj.CostFactor(tech);
+        }
+
+        private static float StepOf(ResearchProjectDef proj)
+        {
+            return IsAnomalyProject(proj) ? AnomalyRoundStep() : RoundStep();
+        }
+
+        private static void RecalculatePool(bool anomaly)
+        {
+            List<ResearchProjectDef> frozen = new List<ResearchProjectDef>();
+            CollectFrozen(frozen, anomaly);
+
+            List<ResearchProjectDef> remaining = new List<ResearchProjectDef>();
+            CollectRemaining(remaining, frozen, anomaly);
+
+            float spent = anomaly ? current.spentAnomaly : current.spentApparent;
+            float target = anomaly ? EffectiveAnomalyTarget() : EffectiveTarget();
+            float remainingBudget = Mathf.Max(0f, target - spent);
+            for (int i = 0; i < frozen.Count; i++)
+            {
+                remainingBudget = Mathf.Max(0f, remainingBudget - ApparentOf(frozen[i]));
+            }
+
+            Allocate(remaining, remainingBudget, frozen);
+        }
+
+        private static bool HasAssignedForPool(bool anomaly)
+        {
+            if (current == null || current.assignedCosts == null)
+            {
+                return false;
+            }
+
+            foreach (KeyValuePair<ResearchProjectDef, float> kv in current.assignedCosts)
+            {
+                if (kv.Key != null && IsAnomalyProject(kv.Key) == anomaly)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static void Allocate(List<ResearchProjectDef> nodes, float budgetApparent, List<ResearchProjectDef> frozen)
         {
             if (current == null)
             {
                 return;
             }
 
-            if (frozen != null && !current.assignedCosts.ContainsKey(frozen))
+            if (frozen != null)
             {
-                current.assignedCosts[frozen] = OriginalCost(frozen);
+                for (int i = 0; i < frozen.Count; i++)
+                {
+                    ResearchProjectDef frozenProj = frozen[i];
+                    if (!current.assignedCosts.ContainsKey(frozenProj))
+                    {
+                        current.assignedCosts[frozenProj] = OriginalCost(frozenProj);
+                    }
+                }
             }
 
             if (nodes.Count == 0)
@@ -447,10 +715,10 @@ namespace ResearchTotal
             for (int i = 0; i < nodes.Count; i++)
             {
                 ResearchProjectDef proj = nodes[i];
-                float factor = proj.CostFactor(tech);
+                float factor = FactorOf(proj, tech);
                 float share = budgetApparent * AllocationWeight(proj, tech) / weightSum;
                 float cost = factor > 0f ? share / factor : share;
-                cost = ApplyRounding(cost);
+                cost = ApplyRounding(cost, StepOf(proj));
                 cost = Mathf.Max(OriginalCost(proj), cost);
                 float progressNow = ProgressOf(proj, progress);
                 if (progressNow > cost)
@@ -476,7 +744,7 @@ namespace ResearchTotal
                 float sum = 0f;
                 for (int i = 0; i < nodes.Count; i++)
                 {
-                    sum += GetAssignedOrOriginal(nodes[i]) * nodes[i].CostFactor(tech);
+                    sum += GetAssignedOrOriginal(nodes[i]) * FactorOf(nodes[i], tech);
                 }
 
                 float diff = budgetApparent - sum;
@@ -489,14 +757,14 @@ namespace ResearchTotal
                 for (int i = 0; i < nodes.Count && Mathf.Abs(diff) >= 1f; i++)
                 {
                     ResearchProjectDef proj = nodes[i];
-                    float factor = proj.CostFactor(tech);
+                    float factor = FactorOf(proj, tech);
                     if (factor <= 0f)
                     {
                         continue;
                     }
 
-                    float step = RoundStep();
-                    float deltaCost = ApplyRounding(diff / factor);
+                    float step = StepOf(proj);
+                    float deltaCost = ApplyRounding(diff / factor, step);
                     if (Mathf.Abs(deltaCost) < step)
                     {
                         deltaCost = diff > 0f ? step : -step;
@@ -529,8 +797,6 @@ namespace ResearchTotal
 
         private static void DiscoverFinishedFromProgress()
         {
-            finishedSet.Clear();
-            current.finishedProjects.Clear();
             ResearchManager manager = Find.ResearchManager;
             if (manager == null)
             {
@@ -541,20 +807,42 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (manager.GetProgress(proj) >= OriginalCost(proj) - 0.01f)
+                if (IsFinishedTracked(proj))
+                {
+                    continue;
+                }
+
+                float progress = manager.GetProgress(proj);
+                if (progress >= OriginalCost(proj) - 0.01f || progress >= GetAssignedOrOriginal(proj) - 0.01f)
                 {
                     finishedSet.Add(proj);
-                    current.finishedProjects.Add(proj);
+                    if (!current.finishedProjects.Contains(proj))
+                    {
+                        current.finishedProjects.Add(proj);
+                    }
                 }
             }
         }
 
-        private static void CreditExistingFinished()
+        private static void RecomputeSpent()
         {
             current.spentApparent = 0f;
+            current.spentAnomaly = 0f;
             foreach (ResearchProjectDef proj in finishedSet)
             {
-                current.spentApparent += ApparentOf(proj);
+                if (!IsIncluded(proj))
+                {
+                    continue;
+                }
+
+                if (IsAnomalyProject(proj))
+                {
+                    current.spentAnomaly += ApparentOf(proj);
+                }
+                else
+                {
+                    current.spentApparent += ApparentOf(proj);
+                }
             }
         }
 
@@ -571,13 +859,13 @@ namespace ResearchTotal
             }
         }
 
-        private static void CollectRemaining(List<ResearchProjectDef> remaining, ResearchProjectDef frozen)
+        private static void CollectRemaining(List<ResearchProjectDef> remaining, List<ResearchProjectDef> frozen, bool anomaly)
         {
-            List<ResearchProjectDef> all = CollectIncluded();
+            List<ResearchProjectDef> all = anomaly ? CollectAnomaly() : CollectStandard();
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (IsFinishedTracked(proj) || proj == frozen)
+                if (IsFinishedTracked(proj) || (frozen != null && frozen.Contains(proj)))
                 {
                     continue;
                 }
@@ -601,26 +889,74 @@ namespace ResearchTotal
             return list;
         }
 
-        private static ResearchProjectDef FrozenProject()
+        private static List<ResearchProjectDef> CollectStandard()
+        {
+            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (IsIncluded(proj) && !IsAnomalyProject(proj))
+                {
+                    list.Add(proj);
+                }
+            }
+
+            return list;
+        }
+
+        private static List<ResearchProjectDef> CollectAnomaly()
+        {
+            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
+            if (!AnomalyActive())
+            {
+                return list;
+            }
+
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (IsIncluded(proj) && IsAnomalyProject(proj))
+                {
+                    list.Add(proj);
+                }
+            }
+
+            return list;
+        }
+
+        private static void CollectFrozen(List<ResearchProjectDef> frozen, bool anomaly)
         {
             if (Find.ResearchManager == null)
             {
-                return null;
+                return;
             }
 
-            ResearchProjectDef currentProj = Find.ResearchManager.GetProject(null);
-            if (currentProj == null || !IsIncluded(currentProj) || IsFinishedTracked(currentProj))
+            TryAddFrozen(frozen, Find.ResearchManager.GetProject(null), anomaly);
+            if (AnomalyActive())
             {
-                return null;
+                TryAddFrozen(frozen, Find.ResearchManager.GetProject(KnowledgeCategoryDefOf.Basic), anomaly);
+                TryAddFrozen(frozen, Find.ResearchManager.GetProject(KnowledgeCategoryDefOf.Advanced), anomaly);
             }
+        }
 
-            float progress = Find.ResearchManager.GetProgress(currentProj);
-            if (progress <= 0f)
+        private static void TryAddFrozen(List<ResearchProjectDef> frozen, ResearchProjectDef proj, bool anomaly)
+        {
+            if (proj == null || !IsIncluded(proj) || IsFinishedTracked(proj) || IsAnomalyProject(proj) != anomaly)
             {
-                return null;
+                return;
             }
 
-            return currentProj;
+            if (Find.ResearchManager.GetProgress(proj) <= 0f)
+            {
+                return;
+            }
+
+            if (!frozen.Contains(proj))
+            {
+                frozen.Add(proj);
+            }
         }
 
         private static bool IsFinishedTracked(ResearchProjectDef proj)
@@ -630,7 +966,7 @@ namespace ResearchTotal
 
         private static float ApparentOf(ResearchProjectDef proj)
         {
-            return GetAssignedOrOriginal(proj) * proj.CostFactor(PlayerTechLevel());
+            return GetAssignedOrOriginal(proj) * FactorOf(proj, PlayerTechLevel());
         }
 
         private static float GetAssignedOrOriginal(ResearchProjectDef proj)
@@ -645,12 +981,21 @@ namespace ResearchTotal
 
         private static float ApplyRounding(float value)
         {
+            return ApplyRounding(value, RoundStep());
+        }
+
+        private static float ApplyRounding(float value, float step)
+        {
             if (value < 0f)
             {
                 value = 0f;
             }
 
-            float step = RoundStep();
+            if (step < 1f)
+            {
+                step = 1f;
+            }
+
             return Mathf.Round(value / step) * step;
         }
 

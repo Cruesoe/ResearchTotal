@@ -24,6 +24,11 @@ namespace ResearchTotal
         private string bufferInd;
         private string bufferSpa;
         private string bufferUlt;
+        private string anomalyTargetBuffer;
+        private string anomalyRoundBuffer;
+        private string bufferAnomalyBasic;
+        private string bufferAnomalyAdvanced;
+        private Vector2 scrollPosition;
 
         public ResearchTotalMod(ModContentPack content) : base(content)
         {
@@ -50,65 +55,24 @@ namespace ResearchTotal
         {
             ClampAll();
 
-            float y = inRect.y;
-            float w = inRect.width;
+            float contentWidth = inRect.width - 16f;
+            float contentHeight = MeasureContentHeight();
+            Rect viewRect = new Rect(0f, 0f, contentWidth, Mathf.Max(contentHeight, inRect.height));
+            Widgets.BeginScrollView(inRect, ref scrollPosition, viewRect);
 
-            Rect roundRow = new Rect(inRect.x, y, w, 28f);
-            Text.Anchor = TextAnchor.MiddleLeft;
-            GUI.color = LabelColor;
-            Widgets.Label(roundRow.LeftPart(0.32f), "Round to nearest");
-            GUI.color = Color.white;
-            Text.Anchor = TextAnchor.UpperLeft;
-            Rect roundField = new Rect(roundRow.x + roundRow.width * 0.32f, roundRow.y, 120f, roundRow.height);
-            Widgets.TextFieldNumeric(roundField.ContractedBy(0f, 1f), ref settings.roundTo, ref roundBuffer, 1f, 10000f);
-            y += 36f;
-
-            Widgets.DrawLineHorizontal(inRect.x, y, w, LineColor);
-            y += 12f;
-
-            GUI.color = LabelColor;
-            Widgets.Label(new Rect(inRect.x, y, w, 22f), "Research point target");
-            GUI.color = Color.white;
-            y += 24f;
-
-            DrawTargetField(new Rect(inRect.x, y, w, 30f));
-            y += 38f;
-
-            DrawPresets(new Rect(inRect.x, y, w, 28f));
-            y += 40f;
-
-            GUI.color = LabelColor;
-            Widgets.Label(new Rect(inRect.x, y, w, 22f), "Era weights  ·  later eras take more of the target because research gets faster");
-            GUI.color = Color.white;
-            y += 24f;
-
-            DrawEraWeights(new Rect(inRect.x, y, w, 28f));
-            y += 40f;
-
-            Widgets.DrawLineHorizontal(inRect.x, y, w, LineColor);
-            y += 12f;
-
-            float resetH = 28f;
-            float remain = inRect.yMax - resetH - 8f - y;
-            bool inColony = ResearchTotalEngine.HasColony();
-            float summaryH = inColony ? 72f : 52f;
-            if (summaryH > remain * 0.4f)
+            float y = 0f;
+            float w = viewRect.width;
+            y = DrawStandardSection(new Rect(0f, y, w, 1f));
+            if (ResearchTotalEngine.AnomalyActive())
             {
-                summaryH = remain * 0.4f;
+                y += 8f;
+                Widgets.DrawLineHorizontal(0f, y, w, LineColor);
+                y += 16f;
+                y = DrawAnomalySection(new Rect(0f, y, w, 1f));
             }
 
-            Rect eras = new Rect(inRect.x, y, w, remain - summaryH - 8f);
-            if (eras.height > 40f)
-            {
-                Widgets.DrawMenuSection(eras);
-                DrawEraTable(eras.ContractedBy(12f, 6f));
-            }
-
-            Rect summary = new Rect(inRect.x, inRect.yMax - resetH - 8f - summaryH, w, summaryH);
-            Widgets.DrawMenuSection(summary);
-            DrawStats(summary.ContractedBy(12f, 6f));
-
-            if (Widgets.ButtonText(new Rect(inRect.x, inRect.yMax - resetH, 180f, resetH), "Reset to defaults"))
+            y += 8f;
+            if (Widgets.ButtonText(new Rect(0f, y, 180f, 28f), "Reset to defaults"))
             {
                 settings.ResetToDefaults();
                 targetBuffer = null;
@@ -118,23 +82,139 @@ namespace ResearchTotal
                 bufferInd = null;
                 bufferSpa = null;
                 bufferUlt = null;
+                anomalyTargetBuffer = null;
+                anomalyRoundBuffer = null;
+                bufferAnomalyBasic = null;
+                bufferAnomalyAdvanced = null;
                 ClampAll();
                 if (ResearchTotalEngine.HasColony())
                 {
                     ResearchTotalEngine.RecalculateRemaining();
                 }
             }
+
+            Widgets.EndScrollView();
         }
 
-        private void DrawTargetField(Rect rect)
+        private float DrawStandardSection(Rect start)
         {
-            if (string.IsNullOrEmpty(targetBuffer) || targetBuffer.IndexOf('E') >= 0 || targetBuffer.IndexOf('e') >= 0)
+            float y = start.y;
+            float w = start.width;
+
+            Rect roundRow = new Rect(start.x, y, w, 28f);
+            DrawRoundRow(roundRow, "Round to nearest", ref settings.roundTo, ref roundBuffer);
+            y += 36f;
+
+            Widgets.DrawLineHorizontal(start.x, y, w, LineColor);
+            y += 12f;
+
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Research point target");
+            GUI.color = Color.white;
+            y += 24f;
+
+            DrawTargetField(new Rect(start.x, y, w, 30f), ref settings.targetPoints, ref targetBuffer, Floor(), ResearchTotalEngine.MaxBudget);
+            y += 38f;
+
+            DrawPresets(new Rect(start.x, y, w, 28f));
+            y += 40f;
+
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Era weights  ·  later eras take more of the target because research gets faster");
+            GUI.color = Color.white;
+            y += 24f;
+
+            DrawEraWeights(new Rect(start.x, y, w, 28f));
+            y += 40f;
+
+            float tableH = TableBlockHeight(ResearchTotalEngine.BuildEraSlices().Count);
+            Rect eras = new Rect(start.x, y, w, tableH);
+            Widgets.DrawMenuSection(eras);
+            DrawEraTable(eras.ContractedBy(12f, 6f), ResearchTotalEngine.BuildEraSlices(), "Era");
+            y += tableH + 8f;
+
+            float summaryH = ResearchTotalEngine.HasColony() ? 72f : 52f;
+            Rect summary = new Rect(start.x, y, w, summaryH);
+            Widgets.DrawMenuSection(summary);
+            DrawStats(summary.ContractedBy(12f, 6f));
+            y += summaryH;
+            return y;
+        }
+
+        private float DrawAnomalySection(Rect start)
+        {
+            float y = start.y;
+            float w = start.width;
+
+            GUI.color = AccentColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Anomaly  ·  dark study");
+            GUI.color = Color.white;
+            y += 22f;
+
+            GUI.color = LabelColor;
+            Text.Font = GameFont.Tiny;
+            Widgets.Label(new Rect(start.x, y, w, 32f), "Entity study uses knowledge, not bench research points. This total is separate from the tech tree above. Tech-level penalties do not apply.");
+            Text.Font = GameFont.Small;
+            GUI.color = Color.white;
+            y += 36f;
+
+            Rect roundRow = new Rect(start.x, y, w, 28f);
+            DrawRoundRow(roundRow, "Round knowledge to nearest", ref settings.roundAnomalyTo, ref anomalyRoundBuffer);
+            y += 36f;
+
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Knowledge target");
+            GUI.color = Color.white;
+            y += 24f;
+
+            DrawTargetField(new Rect(start.x, y, w, 30f), ref settings.targetAnomalyPoints, ref anomalyTargetBuffer, FloorAnomaly(), ResearchTotalEngine.MaxBudget);
+            y += 38f;
+
+            DrawAnomalyPresets(new Rect(start.x, y, w, 28f));
+            y += 40f;
+
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Category weights  ·  Advanced takes more of the target by default");
+            GUI.color = Color.white;
+            y += 24f;
+
+            DrawAnomalyWeights(new Rect(start.x, y, w, 28f));
+            y += 40f;
+
+            float tableH = TableBlockHeight(ResearchTotalEngine.BuildAnomalySlices().Count);
+            Rect table = new Rect(start.x, y, w, tableH);
+            Widgets.DrawMenuSection(table);
+            DrawEraTable(table.ContractedBy(12f, 6f), ResearchTotalEngine.BuildAnomalySlices(), "Category");
+            y += tableH + 8f;
+
+            float summaryH = ResearchTotalEngine.HasColony() ? 72f : 52f;
+            Rect summary = new Rect(start.x, y, w, summaryH);
+            Widgets.DrawMenuSection(summary);
+            DrawAnomalyStats(summary.ContractedBy(12f, 6f));
+            y += summaryH;
+            return y;
+        }
+
+        private static void DrawRoundRow(Rect roundRow, string label, ref float value, ref string buffer)
+        {
+            Text.Anchor = TextAnchor.MiddleLeft;
+            GUI.color = LabelColor;
+            Widgets.Label(roundRow.LeftPart(0.32f), label);
+            GUI.color = Color.white;
+            Text.Anchor = TextAnchor.UpperLeft;
+            Rect roundField = new Rect(roundRow.x + roundRow.width * 0.32f, roundRow.y, 120f, roundRow.height);
+            Widgets.TextFieldNumeric(roundField.ContractedBy(0f, 1f), ref value, ref buffer, 1f, 10000f);
+        }
+
+        private void DrawTargetField(Rect rect, ref float value, ref string buffer, float floor, float max)
+        {
+            if (string.IsNullOrEmpty(buffer) || buffer.IndexOf('E') >= 0 || buffer.IndexOf('e') >= 0)
             {
-                targetBuffer = FormatTarget(settings.targetPoints);
+                buffer = FormatTarget(value);
             }
 
-            string text = Widgets.TextField(rect, targetBuffer);
-            if (text == targetBuffer)
+            string text = Widgets.TextField(rect, buffer);
+            if (text == buffer)
             {
                 return;
             }
@@ -148,15 +228,15 @@ namespace ResearchTotal
                 }
             }
 
-            targetBuffer = digits.ToString();
-            if (targetBuffer.Length == 0)
+            buffer = digits.ToString();
+            if (buffer.Length == 0)
             {
                 return;
             }
 
-            if (float.TryParse(targetBuffer, NumberStyles.Integer, CultureInfo.InvariantCulture, out float parsed))
+            if (float.TryParse(buffer, NumberStyles.Integer, CultureInfo.InvariantCulture, out float parsed))
             {
-                settings.targetPoints = Mathf.Clamp(parsed, Floor(), ResearchTotalEngine.MaxBudget);
+                value = Mathf.Clamp(parsed, floor, max);
             }
         }
 
@@ -194,6 +274,50 @@ namespace ResearchTotal
             {
                 ResearchTotalEngine.RecalculateRemaining();
             }
+        }
+
+        private void DrawAnomalyPresets(Rect rect)
+        {
+            float gap = 6f;
+            float bw = (rect.width - gap * 4f) / 5f;
+            Rect vanilla = new Rect(rect.x, rect.y, bw, rect.height);
+            if (Widgets.ButtonText(vanilla, "Vanilla"))
+            {
+                settings.targetAnomalyPoints = Mathf.Max(1f, ResearchTotalEngine.VanillaAnomalyTotal());
+                anomalyTargetBuffer = FormatTarget(settings.targetAnomalyPoints);
+                if (ResearchTotalEngine.HasColony())
+                {
+                    ResearchTotalEngine.RecalculateRemaining();
+                }
+            }
+
+            DrawAnomalyPreset(new Rect(rect.x + (bw + gap), rect.y, bw, rect.height), "2.5k", 2500f);
+            DrawAnomalyPreset(new Rect(rect.x + (bw + gap) * 2f, rect.y, bw, rect.height), "5k", 5000f);
+            DrawAnomalyPreset(new Rect(rect.x + (bw + gap) * 3f, rect.y, bw, rect.height), "10k", 10000f);
+            DrawAnomalyPreset(new Rect(rect.x + (bw + gap) * 4f, rect.y, bw, rect.height), "25k", 25000f);
+        }
+
+        private void DrawAnomalyPreset(Rect rect, string label, float amount)
+        {
+            if (!Widgets.ButtonText(rect, label))
+            {
+                return;
+            }
+
+            settings.targetAnomalyPoints = Mathf.Clamp(amount, FloorAnomaly(), ResearchTotalEngine.MaxBudget);
+            anomalyTargetBuffer = FormatTarget(settings.targetAnomalyPoints);
+            if (ResearchTotalEngine.HasColony())
+            {
+                ResearchTotalEngine.RecalculateRemaining();
+            }
+        }
+
+        private void DrawAnomalyWeights(Rect rect)
+        {
+            float gap = 6f;
+            float w = (rect.width - gap) / 2f;
+            DrawEraField(new Rect(rect.x, rect.y, w, rect.height), "Basic", ref settings.anomalyBasic, ref bufferAnomalyBasic);
+            DrawEraField(new Rect(rect.x + w + gap, rect.y, w, rect.height), "Advanced", ref settings.anomalyAdvanced, ref bufferAnomalyAdvanced);
         }
 
         private void DrawEraWeights(Rect rect)
@@ -237,11 +361,30 @@ namespace ResearchTotal
             DrawStatRow(new Rect(rect.x, rect.y + row * 2f, rect.width, row), "Completed and Total", Pts(spent) + " / " + Pts(target), false);
         }
 
-        private static void DrawEraTable(Rect rect)
+        private static void DrawAnomalyStats(Rect rect)
         {
-            List<EraSlice> slices = ResearchTotalEngine.BuildEraSlices();
+            float vanilla = ResearchTotalEngine.VanillaAnomalyTotal();
+            float target = ResearchTotalEngine.EffectiveAnomalyTarget();
+            int count = ResearchTotalEngine.AnomalyCount();
+            float ratio = vanilla > 0f ? target / vanilla : 0f;
+            bool inColony = ResearchTotalEngine.HasColony();
+            float row = rect.height / (inColony ? 3f : 2f);
+
+            DrawStatRow(new Rect(rect.x, rect.y, rect.width, row), "Vanilla Anomaly", Pts(vanilla) + "   ·   " + count + " projects", false);
+            DrawStatRow(new Rect(rect.x, rect.y + row, rect.width, row), "Scaled total", Pts(target) + "   ·   " + ratio.ToString("0.00") + "x", true);
+            if (!inColony)
+            {
+                return;
+            }
+
+            float spent = ResearchTotalEngine.CurrentSpentAnomaly();
+            DrawStatRow(new Rect(rect.x, rect.y + row * 2f, rect.width, row), "Completed and Total", Pts(spent) + " / " + Pts(target), false);
+        }
+
+        private static void DrawEraTable(Rect rect, List<EraSlice> slices, string groupLabel)
+        {
             float headerH = 22f;
-            DrawEraHeader(new Rect(rect.x, rect.y, rect.width, headerH));
+            DrawEraHeader(new Rect(rect.x, rect.y, rect.width, headerH), groupLabel);
             if (slices.Count == 0)
             {
                 return;
@@ -267,11 +410,11 @@ namespace ResearchTotal
             DrawEraTotal(new Rect(rect.x, rect.y + headerH + rowH * slices.Count, rect.width, rowH), total);
         }
 
-        private static void DrawEraHeader(Rect rect)
+        private static void DrawEraHeader(Rect rect, string groupLabel)
         {
             GUI.color = HeaderColor;
             Text.Anchor = TextAnchor.MiddleLeft;
-            Widgets.Label(Col(rect, 0f, 0.28f), "Era");
+            Widgets.Label(Col(rect, 0f, 0.28f), groupLabel);
             Text.Anchor = TextAnchor.MiddleRight;
             Widgets.Label(Col(rect, 0.28f, 0.14f), "Techs");
             Widgets.Label(Col(rect, 0.42f, 0.29f), "Vanilla");
@@ -340,11 +483,43 @@ namespace ResearchTotal
             settings.eraIndustrial = ResearchTotalSettings.ClampEra(settings.eraIndustrial, 1.50f);
             settings.eraSpacer = ResearchTotalSettings.ClampEra(settings.eraSpacer, 2.00f);
             settings.eraUltra = ResearchTotalSettings.ClampEra(settings.eraUltra, 2.50f);
+            settings.targetAnomalyPoints = Mathf.Clamp(settings.targetAnomalyPoints, FloorAnomaly(), ResearchTotalEngine.MaxBudget);
+            settings.roundAnomalyTo = Mathf.Clamp(Mathf.Round(settings.roundAnomalyTo), 1f, 10000f);
+            settings.anomalyBasic = ResearchTotalSettings.ClampEra(settings.anomalyBasic, 1.00f);
+            settings.anomalyAdvanced = ResearchTotalSettings.ClampEra(settings.anomalyAdvanced, 1.50f);
         }
 
         private static float Floor()
         {
             return Mathf.Max(1f, ResearchTotalEngine.VanillaApparentTotal());
+        }
+
+        private static float FloorAnomaly()
+        {
+            return Mathf.Max(1f, ResearchTotalEngine.VanillaAnomalyTotal());
+        }
+
+        private static float TableBlockHeight(int rows)
+        {
+            int n = Mathf.Max(1, rows);
+            return 12f + 22f + (n + 1) * 24f + 12f;
+        }
+
+        private float MeasureContentHeight()
+        {
+            float h = 36f + 12f + 24f + 38f + 40f + 24f + 40f;
+            h += TableBlockHeight(ResearchTotalEngine.BuildEraSlices().Count) + 8f;
+            h += ResearchTotalEngine.HasColony() ? 72f : 52f;
+            if (ResearchTotalEngine.AnomalyActive())
+            {
+                h += 8f + 16f;
+                h += 22f + 36f + 36f + 24f + 38f + 40f + 24f + 40f;
+                h += TableBlockHeight(ResearchTotalEngine.BuildAnomalySlices().Count) + 8f;
+                h += ResearchTotalEngine.HasColony() ? 72f : 52f;
+            }
+
+            h += 8f + 28f + 12f;
+            return h;
         }
 
         private static string FormatTarget(float value)

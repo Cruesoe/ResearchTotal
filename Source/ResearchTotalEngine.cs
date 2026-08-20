@@ -20,13 +20,23 @@ namespace ResearchTotal
         }
     }
 
+    public enum ResearchPool
+    {
+        Standard,
+        Anomaly,
+        Gravship
+    }
+
     [StaticConstructorOnStartup]
     public static class ResearchTotalEngine
     {
         public const float MaxBudget = 100000000f;
+        public const string GravshipPackageId = "vanillaexpanded.gravship";
 
         private static readonly FieldInfo ProgressField = AccessTools.Field(typeof(ResearchManager), "progress");
         private static readonly Dictionary<ResearchProjectDef, float> originalCosts = new Dictionary<ResearchProjectDef, float>();
+        private static FieldInfo gravtechProjectField;
+        private static bool gravtechFieldResolved;
 
         private static GameComponent_ResearchTotal current;
         private static bool snapping;
@@ -71,6 +81,80 @@ namespace ResearchTotal
         public static bool AnomalyActive()
         {
             return ModsConfig.AnomalyActive;
+        }
+
+        public static bool GravshipActive()
+        {
+            return ModsConfig.IsActive(GravshipPackageId);
+        }
+
+        public static bool IsGravshipProject(ResearchProjectDef proj)
+        {
+            if (proj == null || !GravshipActive() || IsAnomalyProject(proj))
+            {
+                return false;
+            }
+
+            if (proj.tab != null && proj.tab.defName == "VGE_Gravtech")
+            {
+                return true;
+            }
+
+            if (proj.modExtensions == null)
+            {
+                return false;
+            }
+
+            for (int i = 0; i < proj.modExtensions.Count; i++)
+            {
+                DefModExtension ext = proj.modExtensions[i];
+                if (ext != null && ext.GetType().Name == "GravtechResearchExtension")
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static ResearchPool PoolOf(ResearchProjectDef proj)
+        {
+            if (IsAnomalyProject(proj))
+            {
+                return ResearchPool.Anomaly;
+            }
+
+            if (IsGravshipProject(proj))
+            {
+                return ResearchPool.Gravship;
+            }
+
+            return ResearchPool.Standard;
+        }
+
+        private static ResearchProjectDef CurrentGravtechProject()
+        {
+            if (!GravshipActive())
+            {
+                return null;
+            }
+
+            if (!gravtechFieldResolved)
+            {
+                gravtechFieldResolved = true;
+                System.Type type = AccessTools.TypeByName("VanillaGravshipExpanded.World_ExposeData_Patch");
+                if (type != null)
+                {
+                    gravtechProjectField = AccessTools.Field(type, "currentGravtechProject");
+                }
+            }
+
+            if (gravtechProjectField == null)
+            {
+                return null;
+            }
+
+            return gravtechProjectField.GetValue(null) as ResearchProjectDef;
         }
 
         public static void Detach()
@@ -135,18 +219,24 @@ namespace ResearchTotal
                 comp.lastTechLevel = PlayerTechLevel();
             }
 
-            if (!HasAssignedForPool(false))
+            if (!HasAssignedForPool(ResearchPool.Standard))
             {
                 Allocate(CollectStandard(), EffectiveTarget(), null);
             }
 
-            if (AnomalyActive() && !HasAssignedForPool(true))
+            if (AnomalyActive() && !HasAssignedForPool(ResearchPool.Anomaly))
             {
                 Allocate(CollectAnomaly(), EffectiveAnomalyTarget(), null);
             }
 
+            if (GravshipActive() && !HasAssignedForPool(ResearchPool.Gravship))
+            {
+                Allocate(CollectGravship(), EffectiveGravshipTarget(), null);
+            }
+
             RecomputeSpent();
             comp.ready = true;
+            RecalculateRemaining();
             SnapFinishedProgress();
         }
 
@@ -157,10 +247,15 @@ namespace ResearchTotal
                 return;
             }
 
-            RecalculatePool(false);
+            RecalculatePool(ResearchPool.Standard);
             if (AnomalyActive())
             {
-                RecalculatePool(true);
+                RecalculatePool(ResearchPool.Anomaly);
+            }
+
+            if (GravshipActive())
+            {
+                RecalculatePool(ResearchPool.Gravship);
             }
 
             SnapFinishedProgress();
@@ -180,7 +275,12 @@ namespace ResearchTotal
             }
 
             current.lastTechLevel = now;
-            RecalculatePool(false);
+            RecalculatePool(ResearchPool.Standard);
+            if (GravshipActive())
+            {
+                RecalculatePool(ResearchPool.Gravship);
+            }
+
             SnapFinishedProgress();
         }
 
@@ -201,6 +301,10 @@ namespace ResearchTotal
             {
                 current.spentAnomaly += ApparentOf(proj);
             }
+            else if (IsGravshipProject(proj))
+            {
+                current.spentGravship += ApparentOf(proj);
+            }
             else
             {
                 current.spentApparent += ApparentOf(proj);
@@ -217,6 +321,7 @@ namespace ResearchTotal
             List<ResearchProjectDef> all = CollectIncluded();
             current.spentApparent = 0f;
             current.spentAnomaly = 0f;
+            current.spentGravship = 0f;
             finishedSet.Clear();
             current.finishedProjects.Clear();
             for (int i = 0; i < all.Count; i++)
@@ -227,6 +332,10 @@ namespace ResearchTotal
                 if (IsAnomalyProject(proj))
                 {
                     current.spentAnomaly += ApparentOf(proj);
+                }
+                else if (IsGravshipProject(proj))
+                {
+                    current.spentGravship += ApparentOf(proj);
                 }
                 else
                 {
@@ -246,11 +355,17 @@ namespace ResearchTotal
             current.finishedProjects.Clear();
             current.spentApparent = 0f;
             current.spentAnomaly = 0f;
+            current.spentGravship = 0f;
             current.assignedCosts.Clear();
             Allocate(CollectStandard(), EffectiveTarget(), null);
             if (AnomalyActive())
             {
                 Allocate(CollectAnomaly(), EffectiveAnomalyTarget(), null);
+            }
+
+            if (GravshipActive())
+            {
+                Allocate(CollectGravship(), EffectiveGravshipTarget(), null);
             }
 
             SnapFinishedProgress();
@@ -296,7 +411,7 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && !IsAnomalyProject(proj))
+                if (IsIncluded(proj) && PoolOf(proj) == ResearchPool.Standard)
                 {
                     total += OriginalCost(proj) * proj.CostFactor(tech);
                 }
@@ -311,7 +426,7 @@ namespace ResearchTotal
             List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
             for (int i = 0; i < all.Count; i++)
             {
-                if (IsIncluded(all[i]) && !IsAnomalyProject(all[i]))
+                if (IsIncluded(all[i]) && PoolOf(all[i]) == ResearchPool.Standard)
                 {
                     count++;
                 }
@@ -348,6 +463,68 @@ namespace ResearchTotal
         public static float EffectiveAnomalyTarget()
         {
             return Mathf.Clamp(CurrentAnomalyTarget(), Mathf.Max(1f, VanillaAnomalyTotal()), MaxBudget);
+        }
+
+        public static float CurrentGravshipTarget()
+        {
+            if (ResearchTotalMod.settings == null)
+            {
+                return 5000f;
+            }
+
+            return Mathf.Clamp(ResearchTotalMod.settings.targetGravshipPoints, 1f, MaxBudget);
+        }
+
+        public static float EffectiveGravshipTarget()
+        {
+            return Mathf.Clamp(CurrentGravshipTarget(), Mathf.Max(1f, VanillaGravshipTotal()), MaxBudget);
+        }
+
+        public static float VanillaGravshipTotal()
+        {
+            if (!GravshipActive())
+            {
+                return 0f;
+            }
+
+            TechLevel tech = PlayerTechLevel();
+            float total = 0f;
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (IsIncluded(proj) && IsGravshipProject(proj))
+                {
+                    total += OriginalCost(proj) * proj.CostFactor(tech);
+                }
+            }
+
+            return total;
+        }
+
+        public static int GravshipCount()
+        {
+            if (!GravshipActive())
+            {
+                return 0;
+            }
+
+            int count = 0;
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                if (IsIncluded(all[i]) && IsGravshipProject(all[i]))
+                {
+                    count++;
+                }
+            }
+
+            return count;
+        }
+
+        public static float CurrentSpentGravship()
+        {
+            return current != null ? current.spentGravship : 0f;
         }
 
         public static float VanillaAnomalyTotal()
@@ -408,16 +585,16 @@ namespace ResearchTotal
             {
                 case TechLevel.Animal:
                 case TechLevel.Neolithic:
-                    return s.eraNeolithic;
+                    return IsGravshipProject(proj) ? s.gravNeolithic : s.eraNeolithic;
                 case TechLevel.Medieval:
-                    return s.eraMedieval;
+                    return IsGravshipProject(proj) ? s.gravMedieval : s.eraMedieval;
                 case TechLevel.Industrial:
-                    return s.eraIndustrial;
+                    return IsGravshipProject(proj) ? s.gravIndustrial : s.eraIndustrial;
                 case TechLevel.Spacer:
-                    return s.eraSpacer;
+                    return IsGravshipProject(proj) ? s.gravSpacer : s.eraSpacer;
                 case TechLevel.Ultra:
                 case TechLevel.Archotech:
-                    return s.eraUltra;
+                    return IsGravshipProject(proj) ? s.gravUltra : s.eraUltra;
                 default:
                     return 1f;
             }
@@ -514,7 +691,7 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (!IsIncluded(proj) || IsAnomalyProject(proj))
+                if (!IsIncluded(proj) || PoolOf(proj) != ResearchPool.Standard)
                 {
                     continue;
                 }
@@ -536,6 +713,69 @@ namespace ResearchTotal
                     float share = target * AllocationWeight(proj, tech) / weightSum;
                     float cost = factor > 0f ? share / factor : share;
                     cost = ApplyRounding(cost);
+                    cost = Mathf.Max(OriginalCost(proj), cost);
+                    slice.scaled += cost * factor;
+                }
+            }
+
+            List<EraSlice> list = new List<EraSlice>(5);
+            for (int i = 0; i < buckets.Length; i++)
+            {
+                if (buckets[i].count > 0)
+                {
+                    list.Add(buckets[i]);
+                }
+            }
+
+            return list;
+        }
+
+        public static List<EraSlice> BuildGravshipSlices()
+        {
+            EraSlice[] buckets =
+            {
+                new EraSlice("Neolithic"),
+                new EraSlice("Medieval"),
+                new EraSlice("Industrial"),
+                new EraSlice("Spacer"),
+                new EraSlice("Ultra")
+            };
+
+            if (!GravshipActive())
+            {
+                return new List<EraSlice>();
+            }
+
+            TechLevel tech = PlayerTechLevel();
+            float weightSum = 0f;
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            List<ResearchProjectDef> included = new List<ResearchProjectDef>();
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (!IsIncluded(proj) || !IsGravshipProject(proj))
+                {
+                    continue;
+                }
+
+                included.Add(proj);
+                weightSum += AllocationWeight(proj, tech);
+            }
+
+            float target = EffectiveGravshipTarget();
+            float step = GravshipRoundStep();
+            for (int i = 0; i < included.Count; i++)
+            {
+                ResearchProjectDef proj = included[i];
+                EraSlice slice = buckets[EraIndex(proj.techLevel)];
+                slice.count++;
+                float factor = proj.CostFactor(tech);
+                slice.vanilla += OriginalCost(proj) * factor;
+                if (weightSum > 0f)
+                {
+                    float share = target * AllocationWeight(proj, tech) / weightSum;
+                    float cost = factor > 0f ? share / factor : share;
+                    cost = ApplyRounding(cost, step);
                     cost = Mathf.Max(OriginalCost(proj), cost);
                     slice.scaled += cost * factor;
                 }
@@ -623,6 +863,16 @@ namespace ResearchTotal
             return Mathf.Clamp(Mathf.Round(ResearchTotalMod.settings.roundAnomalyTo), 1f, 10000f);
         }
 
+        private static float GravshipRoundStep()
+        {
+            if (ResearchTotalMod.settings == null || ResearchTotalMod.settings.roundGravshipTo < 1f)
+            {
+                return 10f;
+            }
+
+            return Mathf.Clamp(Mathf.Round(ResearchTotalMod.settings.roundGravshipTo), 1f, 10000f);
+        }
+
         private static float FactorOf(ResearchProjectDef proj, TechLevel tech)
         {
             if (IsAnomalyProject(proj))
@@ -635,19 +885,29 @@ namespace ResearchTotal
 
         private static float StepOf(ResearchProjectDef proj)
         {
-            return IsAnomalyProject(proj) ? AnomalyRoundStep() : RoundStep();
+            if (IsAnomalyProject(proj))
+            {
+                return AnomalyRoundStep();
+            }
+
+            if (IsGravshipProject(proj))
+            {
+                return GravshipRoundStep();
+            }
+
+            return RoundStep();
         }
 
-        private static void RecalculatePool(bool anomaly)
+        private static void RecalculatePool(ResearchPool pool)
         {
             List<ResearchProjectDef> frozen = new List<ResearchProjectDef>();
-            CollectFrozen(frozen, anomaly);
+            CollectFrozen(frozen, pool);
 
             List<ResearchProjectDef> remaining = new List<ResearchProjectDef>();
-            CollectRemaining(remaining, frozen, anomaly);
+            CollectRemaining(remaining, frozen, pool);
 
-            float spent = anomaly ? current.spentAnomaly : current.spentApparent;
-            float target = anomaly ? EffectiveAnomalyTarget() : EffectiveTarget();
+            float spent = SpentOf(pool);
+            float target = TargetOf(pool);
             float remainingBudget = Mathf.Max(0f, target - spent);
             for (int i = 0; i < frozen.Count; i++)
             {
@@ -657,7 +917,42 @@ namespace ResearchTotal
             Allocate(remaining, remainingBudget, frozen);
         }
 
-        private static bool HasAssignedForPool(bool anomaly)
+        private static float SpentOf(ResearchPool pool)
+        {
+            if (current == null)
+            {
+                return 0f;
+            }
+
+            if (pool == ResearchPool.Anomaly)
+            {
+                return current.spentAnomaly;
+            }
+
+            if (pool == ResearchPool.Gravship)
+            {
+                return current.spentGravship;
+            }
+
+            return current.spentApparent;
+        }
+
+        private static float TargetOf(ResearchPool pool)
+        {
+            if (pool == ResearchPool.Anomaly)
+            {
+                return EffectiveAnomalyTarget();
+            }
+
+            if (pool == ResearchPool.Gravship)
+            {
+                return EffectiveGravshipTarget();
+            }
+
+            return EffectiveTarget();
+        }
+
+        private static bool HasAssignedForPool(ResearchPool pool)
         {
             if (current == null || current.assignedCosts == null)
             {
@@ -666,7 +961,7 @@ namespace ResearchTotal
 
             foreach (KeyValuePair<ResearchProjectDef, float> kv in current.assignedCosts)
             {
-                if (kv.Key != null && IsAnomalyProject(kv.Key) == anomaly)
+                if (kv.Key != null && PoolOf(kv.Key) == pool)
                 {
                     return true;
                 }
@@ -828,6 +1123,7 @@ namespace ResearchTotal
         {
             current.spentApparent = 0f;
             current.spentAnomaly = 0f;
+            current.spentGravship = 0f;
             foreach (ResearchProjectDef proj in finishedSet)
             {
                 if (!IsIncluded(proj))
@@ -838,6 +1134,10 @@ namespace ResearchTotal
                 if (IsAnomalyProject(proj))
                 {
                     current.spentAnomaly += ApparentOf(proj);
+                }
+                else if (IsGravshipProject(proj))
+                {
+                    current.spentGravship += ApparentOf(proj);
                 }
                 else
                 {
@@ -859,9 +1159,9 @@ namespace ResearchTotal
             }
         }
 
-        private static void CollectRemaining(List<ResearchProjectDef> remaining, List<ResearchProjectDef> frozen, bool anomaly)
+        private static void CollectRemaining(List<ResearchProjectDef> remaining, List<ResearchProjectDef> frozen, ResearchPool pool)
         {
-            List<ResearchProjectDef> all = anomaly ? CollectAnomaly() : CollectStandard();
+            List<ResearchProjectDef> all = CollectPool(pool);
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
@@ -872,6 +1172,21 @@ namespace ResearchTotal
 
                 remaining.Add(proj);
             }
+        }
+
+        private static List<ResearchProjectDef> CollectPool(ResearchPool pool)
+        {
+            if (pool == ResearchPool.Anomaly)
+            {
+                return CollectAnomaly();
+            }
+
+            if (pool == ResearchPool.Gravship)
+            {
+                return CollectGravship();
+            }
+
+            return CollectStandard();
         }
 
         private static List<ResearchProjectDef> CollectIncluded()
@@ -896,7 +1211,7 @@ namespace ResearchTotal
             for (int i = 0; i < all.Count; i++)
             {
                 ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && !IsAnomalyProject(proj))
+                if (IsIncluded(proj) && PoolOf(proj) == ResearchPool.Standard)
                 {
                     list.Add(proj);
                 }
@@ -926,24 +1241,47 @@ namespace ResearchTotal
             return list;
         }
 
-        private static void CollectFrozen(List<ResearchProjectDef> frozen, bool anomaly)
+        private static List<ResearchProjectDef> CollectGravship()
+        {
+            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
+            if (!GravshipActive())
+            {
+                return list;
+            }
+
+            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
+            for (int i = 0; i < all.Count; i++)
+            {
+                ResearchProjectDef proj = all[i];
+                if (IsIncluded(proj) && IsGravshipProject(proj))
+                {
+                    list.Add(proj);
+                }
+            }
+
+            return list;
+        }
+
+        private static void CollectFrozen(List<ResearchProjectDef> frozen, ResearchPool pool)
         {
             if (Find.ResearchManager == null)
             {
                 return;
             }
 
-            TryAddFrozen(frozen, Find.ResearchManager.GetProject(null), anomaly);
+            TryAddFrozen(frozen, Find.ResearchManager.GetProject(null), pool);
             if (AnomalyActive())
             {
-                TryAddFrozen(frozen, Find.ResearchManager.GetProject(KnowledgeCategoryDefOf.Basic), anomaly);
-                TryAddFrozen(frozen, Find.ResearchManager.GetProject(KnowledgeCategoryDefOf.Advanced), anomaly);
+                TryAddFrozen(frozen, Find.ResearchManager.GetProject(KnowledgeCategoryDefOf.Basic), pool);
+                TryAddFrozen(frozen, Find.ResearchManager.GetProject(KnowledgeCategoryDefOf.Advanced), pool);
             }
+
+            TryAddFrozen(frozen, CurrentGravtechProject(), pool);
         }
 
-        private static void TryAddFrozen(List<ResearchProjectDef> frozen, ResearchProjectDef proj, bool anomaly)
+        private static void TryAddFrozen(List<ResearchProjectDef> frozen, ResearchProjectDef proj, ResearchPool pool)
         {
-            if (proj == null || !IsIncluded(proj) || IsFinishedTracked(proj) || IsAnomalyProject(proj) != anomaly)
+            if (proj == null || !IsIncluded(proj) || IsFinishedTracked(proj) || PoolOf(proj) != pool)
             {
                 return;
             }

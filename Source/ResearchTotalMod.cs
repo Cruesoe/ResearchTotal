@@ -1,4 +1,5 @@
 using HarmonyLib;
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Text;
@@ -16,6 +17,9 @@ namespace ResearchTotal
         private static readonly Color AccentColor = new Color(1f, 0.85f, 0.45f);
         private static readonly Color LineColor = new Color(1f, 1f, 1f, 0.12f);
         private static readonly Color HeaderColor = new Color(0.55f, 0.55f, 0.55f);
+        private static readonly Color ResetButtonColor = new Color(0.48f, 0.12f, 0.12f);
+        private const string AnomalyNote = "Entity study uses knowledge, not bench research points. This total is separate from the tech tree above. Tech-level penalties do not apply.";
+        private const string GravshipNote = "Gravtech is researched with gravdata, not the bench. These projects are pulled out of the main total when Vanilla Gravship Expanded is installed.";
 
         private string targetBuffer;
         private string roundBuffer;
@@ -28,7 +32,18 @@ namespace ResearchTotal
         private string anomalyRoundBuffer;
         private string bufferAnomalyBasic;
         private string bufferAnomalyAdvanced;
+        private string gravTargetBuffer;
+        private string gravRoundBuffer;
+        private string bufferGravNeo;
+        private string bufferGravMed;
+        private string bufferGravInd;
+        private string bufferGravSpa;
+        private string bufferGravUlt;
         private Vector2 scrollPosition;
+        private bool standardExpanded;
+        private bool anomalyExpanded;
+        private bool gravshipExpanded;
+        private int lastSettingsFrame = -100;
 
         public ResearchTotalMod(ModContentPack content) : base(content)
         {
@@ -54,46 +69,152 @@ namespace ResearchTotal
         public override void DoSettingsWindowContents(Rect inRect)
         {
             ClampAll();
+            if (Time.frameCount > lastSettingsFrame + 1)
+            {
+                standardExpanded = false;
+                anomalyExpanded = false;
+                gravshipExpanded = false;
+                scrollPosition = Vector2.zero;
+            }
+
+            lastSettingsFrame = Time.frameCount;
 
             float contentWidth = inRect.width - 16f;
-            float contentHeight = MeasureContentHeight();
+            float contentHeight = MeasureContentHeight(contentWidth);
             Rect viewRect = new Rect(0f, 0f, contentWidth, Mathf.Max(contentHeight, inRect.height));
             Widgets.BeginScrollView(inRect, ref scrollPosition, viewRect);
 
             float y = 0f;
             float w = viewRect.width;
-            y = DrawStandardSection(new Rect(0f, y, w, 1f));
+            y = DrawSectionHeader(y, w, "Standard Research", "Bench research. All standard techs scale to this total. Anomaly knowledge and Gravtech are separate when those mods are active.", "Reset Standard Research to defaults.", ref standardExpanded, ResetStandardSection);
+            if (standardExpanded)
+            {
+                y = DrawStandardSection(new Rect(0f, y, w, 1f));
+            }
+
             if (ResearchTotalEngine.AnomalyActive())
             {
                 y += 8f;
-                Widgets.DrawLineHorizontal(0f, y, w, LineColor);
-                y += 16f;
-                y = DrawAnomalySection(new Rect(0f, y, w, 1f));
+                y = DrawSectionHeader(y, w, "Anomaly", "Dark study uses knowledge, not bench research points. This total is separate from the tech tree. Tech-level penalties do not apply.", "Reset Anomaly to defaults.", ref anomalyExpanded, ResetAnomalySection);
+                if (anomalyExpanded)
+                {
+                    y = DrawAnomalySection(new Rect(0f, y, w, 1f));
+                }
             }
 
-            y += 8f;
-            if (Widgets.ButtonText(new Rect(0f, y, 180f, 28f), "Reset to defaults"))
+            if (ResearchTotalEngine.GravshipActive())
             {
-                settings.ResetToDefaults();
-                targetBuffer = null;
-                roundBuffer = null;
-                bufferNeo = null;
-                bufferMed = null;
-                bufferInd = null;
-                bufferSpa = null;
-                bufferUlt = null;
-                anomalyTargetBuffer = null;
-                anomalyRoundBuffer = null;
-                bufferAnomalyBasic = null;
-                bufferAnomalyAdvanced = null;
-                ClampAll();
-                if (ResearchTotalEngine.HasColony())
+                y += 8f;
+                y = DrawSectionHeader(y, w, "Vanilla Gravship Expanded", "Gravtech research from Vanilla Gravship Expanded. This total is separate from the main tech tree.", "Reset Vanilla Gravship Expanded to defaults.", ref gravshipExpanded, ResetGravshipSection);
+                if (gravshipExpanded)
                 {
-                    ResearchTotalEngine.RecalculateRemaining();
+                    y = DrawGravshipSection(new Rect(0f, y, w, 1f));
                 }
             }
 
             Widgets.EndScrollView();
+        }
+
+        private float DrawSectionHeader(float y, float w, string label, string headerTip, string resetTip, ref bool expanded, Action onReset)
+        {
+            Text.Font = GameFont.Medium;
+            float height = Text.LineHeight + 8f;
+            Rect row = new Rect(0f, y, w, height);
+            Rect resetRect = new Rect(row.xMax - 110f, row.y + (row.height - 30f) / 2f, 110f, 30f);
+            Rect toggleRect = new Rect(row.x, row.y, resetRect.x - row.x - 8f, row.height);
+
+            Widgets.DrawHighlightIfMouseover(toggleRect);
+            Text.Anchor = TextAnchor.MiddleLeft;
+            Widgets.Label(toggleRect, (expanded ? "▼  " : "▶  ") + label);
+            Text.Anchor = TextAnchor.UpperLeft;
+            TooltipHandler.TipRegion(toggleRect, headerTip);
+            if (Widgets.ButtonInvisible(toggleRect))
+            {
+                expanded = !expanded;
+            }
+
+            Text.Font = GameFont.Small;
+            TooltipHandler.TipRegion(resetRect, resetTip);
+            if (DrawColoredButton(resetRect, "Reset".Translate(), ResetButtonColor, Color.white))
+            {
+                onReset?.Invoke();
+            }
+
+            y += height + 6f;
+            Widgets.DrawLineHorizontal(0f, y, w, LineColor);
+            y += 10f;
+            return y;
+        }
+
+        private static bool DrawColoredButton(Rect rect, string label, Color background, Color textColor)
+        {
+            if (Event.current.type == EventType.Repaint)
+            {
+                Color fill = Mouse.IsOver(rect)
+                    ? Color.Lerp(background, Color.white, 0.12f)
+                    : background;
+                Widgets.DrawBoxSolid(rect, new Color(fill.r, fill.g, fill.b, 0.90f));
+                TextAnchor previousAnchor = Text.Anchor;
+                Color previous = GUI.color;
+                Text.Anchor = TextAnchor.MiddleCenter;
+                GUI.color = textColor;
+                Widgets.Label(rect, label);
+                GUI.color = previous;
+                Text.Anchor = previousAnchor;
+            }
+
+            if (Event.current.type != EventType.MouseDown || Event.current.button != 0 || !Mouse.IsOver(rect))
+            {
+                return false;
+            }
+
+            Event.current.Use();
+            return true;
+        }
+
+        private void ResetStandardSection()
+        {
+            settings.ResetStandard();
+            targetBuffer = null;
+            roundBuffer = null;
+            bufferNeo = null;
+            bufferMed = null;
+            bufferInd = null;
+            bufferSpa = null;
+            bufferUlt = null;
+            AfterSectionReset();
+        }
+
+        private void ResetAnomalySection()
+        {
+            settings.ResetAnomaly();
+            anomalyTargetBuffer = null;
+            anomalyRoundBuffer = null;
+            bufferAnomalyBasic = null;
+            bufferAnomalyAdvanced = null;
+            AfterSectionReset();
+        }
+
+        private void ResetGravshipSection()
+        {
+            settings.ResetGravship();
+            gravTargetBuffer = null;
+            gravRoundBuffer = null;
+            bufferGravNeo = null;
+            bufferGravMed = null;
+            bufferGravInd = null;
+            bufferGravSpa = null;
+            bufferGravUlt = null;
+            AfterSectionReset();
+        }
+
+        private void AfterSectionReset()
+        {
+            ClampAll();
+            if (ResearchTotalEngine.HasColony())
+            {
+                ResearchTotalEngine.RecalculateRemaining();
+            }
         }
 
         private float DrawStandardSection(Rect start)
@@ -145,18 +266,7 @@ namespace ResearchTotal
         {
             float y = start.y;
             float w = start.width;
-
-            GUI.color = AccentColor;
-            Widgets.Label(new Rect(start.x, y, w, 22f), "Anomaly  ·  dark study");
-            GUI.color = Color.white;
-            y += 22f;
-
-            GUI.color = LabelColor;
-            Text.Font = GameFont.Tiny;
-            Widgets.Label(new Rect(start.x, y, w, 32f), "Entity study uses knowledge, not bench research points. This total is separate from the tech tree above. Tech-level penalties do not apply.");
-            Text.Font = GameFont.Small;
-            GUI.color = Color.white;
-            y += 36f;
+            y = DrawNote(start.x, y, w, AnomalyNote);
 
             Rect roundRow = new Rect(start.x, y, w, 28f);
             DrawRoundRow(roundRow, "Round knowledge to nearest", ref settings.roundAnomalyTo, ref anomalyRoundBuffer);
@@ -193,6 +303,73 @@ namespace ResearchTotal
             DrawAnomalyStats(summary.ContractedBy(12f, 6f));
             y += summaryH;
             return y;
+        }
+
+        private float DrawGravshipSection(Rect start)
+        {
+            float y = start.y;
+            float w = start.width;
+            y = DrawNote(start.x, y, w, GravshipNote);
+
+            Rect roundRow = new Rect(start.x, y, w, 28f);
+            DrawRoundRow(roundRow, "Round to nearest", ref settings.roundGravshipTo, ref gravRoundBuffer);
+            y += 36f;
+
+            Widgets.DrawLineHorizontal(start.x, y, w, LineColor);
+            y += 12f;
+
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Research point target");
+            GUI.color = Color.white;
+            y += 24f;
+
+            DrawTargetField(new Rect(start.x, y, w, 30f), ref settings.targetGravshipPoints, ref gravTargetBuffer, FloorGravship(), ResearchTotalEngine.MaxBudget);
+            y += 38f;
+
+            DrawGravshipPresets(new Rect(start.x, y, w, 28f));
+            y += 40f;
+
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(start.x, y, w, 22f), "Era weights  ·  later eras take more of the target because research gets faster");
+            GUI.color = Color.white;
+            y += 24f;
+
+            DrawGravshipWeights(new Rect(start.x, y, w, 28f));
+            y += 40f;
+
+            float tableH = TableBlockHeight(ResearchTotalEngine.BuildGravshipSlices().Count);
+            Rect eras = new Rect(start.x, y, w, tableH);
+            Widgets.DrawMenuSection(eras);
+            DrawEraTable(eras.ContractedBy(12f, 6f), ResearchTotalEngine.BuildGravshipSlices(), "Era");
+            y += tableH + 8f;
+
+            float summaryH = ResearchTotalEngine.HasColony() ? 72f : 52f;
+            Rect summary = new Rect(start.x, y, w, summaryH);
+            Widgets.DrawMenuSection(summary);
+            DrawGravshipStats(summary.ContractedBy(12f, 6f));
+            y += summaryH;
+            return y;
+        }
+
+        private static float DrawNote(float x, float y, float w, string text)
+        {
+            Text.Font = GameFont.Tiny;
+            Text.WordWrap = true;
+            float h = Mathf.Ceil(Text.CalcHeight(text, w));
+            GUI.color = LabelColor;
+            Widgets.Label(new Rect(x, y, w, h), text);
+            GUI.color = Color.white;
+            Text.Font = GameFont.Small;
+            return y + h + 8f;
+        }
+
+        private static float NoteHeight(string text, float w)
+        {
+            Text.Font = GameFont.Tiny;
+            Text.WordWrap = true;
+            float h = Mathf.Ceil(Text.CalcHeight(text, w)) + 8f;
+            Text.Font = GameFont.Small;
+            return h;
         }
 
         private static void DrawRoundRow(Rect roundRow, string label, ref float value, ref string buffer)
@@ -255,10 +432,10 @@ namespace ResearchTotal
                 }
             }
 
-            DrawPreset(new Rect(rect.x + (bw + gap), rect.y, bw, rect.height), "500k", 500000f);
-            DrawPreset(new Rect(rect.x + (bw + gap) * 2f, rect.y, bw, rect.height), "1M", 1000000f);
-            DrawPreset(new Rect(rect.x + (bw + gap) * 3f, rect.y, bw, rect.height), "2.5M", 2500000f);
-            DrawPreset(new Rect(rect.x + (bw + gap) * 4f, rect.y, bw, rect.height), "5M", 5000000f);
+            DrawPreset(new Rect(rect.x + (bw + gap), rect.y, bw, rect.height), "1M", 1000000f);
+            DrawPreset(new Rect(rect.x + (bw + gap) * 2f, rect.y, bw, rect.height), "2.5M", 2500000f);
+            DrawPreset(new Rect(rect.x + (bw + gap) * 3f, rect.y, bw, rect.height), "5M", 5000000f);
+            DrawPreset(new Rect(rect.x + (bw + gap) * 4f, rect.y, bw, rect.height), "10M", 10000000f);
         }
 
         private void DrawPreset(Rect rect, string label, float amount)
@@ -320,6 +497,53 @@ namespace ResearchTotal
             DrawEraField(new Rect(rect.x + w + gap, rect.y, w, rect.height), "Advanced", ref settings.anomalyAdvanced, ref bufferAnomalyAdvanced);
         }
 
+        private void DrawGravshipPresets(Rect rect)
+        {
+            float gap = 6f;
+            float bw = (rect.width - gap * 4f) / 5f;
+            Rect vanilla = new Rect(rect.x, rect.y, bw, rect.height);
+            if (Widgets.ButtonText(vanilla, "Vanilla"))
+            {
+                settings.targetGravshipPoints = Mathf.Max(1f, ResearchTotalEngine.VanillaGravshipTotal());
+                gravTargetBuffer = FormatTarget(settings.targetGravshipPoints);
+                if (ResearchTotalEngine.HasColony())
+                {
+                    ResearchTotalEngine.RecalculateRemaining();
+                }
+            }
+
+            DrawGravshipPreset(new Rect(rect.x + (bw + gap), rect.y, bw, rect.height), "5k", 5000f);
+            DrawGravshipPreset(new Rect(rect.x + (bw + gap) * 2f, rect.y, bw, rect.height), "10k", 10000f);
+            DrawGravshipPreset(new Rect(rect.x + (bw + gap) * 3f, rect.y, bw, rect.height), "15k", 15000f);
+            DrawGravshipPreset(new Rect(rect.x + (bw + gap) * 4f, rect.y, bw, rect.height), "20k", 20000f);
+        }
+
+        private void DrawGravshipPreset(Rect rect, string label, float amount)
+        {
+            if (!Widgets.ButtonText(rect, label))
+            {
+                return;
+            }
+
+            settings.targetGravshipPoints = Mathf.Clamp(amount, FloorGravship(), ResearchTotalEngine.MaxBudget);
+            gravTargetBuffer = FormatTarget(settings.targetGravshipPoints);
+            if (ResearchTotalEngine.HasColony())
+            {
+                ResearchTotalEngine.RecalculateRemaining();
+            }
+        }
+
+        private void DrawGravshipWeights(Rect rect)
+        {
+            float gap = 6f;
+            float w = (rect.width - gap * 4f) / 5f;
+            DrawEraField(new Rect(rect.x, rect.y, w, rect.height), "Neo", ref settings.gravNeolithic, ref bufferGravNeo);
+            DrawEraField(new Rect(rect.x + (w + gap), rect.y, w, rect.height), "Med", ref settings.gravMedieval, ref bufferGravMed);
+            DrawEraField(new Rect(rect.x + (w + gap) * 2f, rect.y, w, rect.height), "Ind", ref settings.gravIndustrial, ref bufferGravInd);
+            DrawEraField(new Rect(rect.x + (w + gap) * 3f, rect.y, w, rect.height), "Spa", ref settings.gravSpacer, ref bufferGravSpa);
+            DrawEraField(new Rect(rect.x + (w + gap) * 4f, rect.y, w, rect.height), "Ultra", ref settings.gravUltra, ref bufferGravUlt);
+        }
+
         private void DrawEraWeights(Rect rect)
         {
             float gap = 6f;
@@ -378,6 +602,26 @@ namespace ResearchTotal
             }
 
             float spent = ResearchTotalEngine.CurrentSpentAnomaly();
+            DrawStatRow(new Rect(rect.x, rect.y + row * 2f, rect.width, row), "Completed and Total", Pts(spent) + " / " + Pts(target), false);
+        }
+
+        private static void DrawGravshipStats(Rect rect)
+        {
+            float vanilla = ResearchTotalEngine.VanillaGravshipTotal();
+            float target = ResearchTotalEngine.EffectiveGravshipTarget();
+            int count = ResearchTotalEngine.GravshipCount();
+            float ratio = vanilla > 0f ? target / vanilla : 0f;
+            bool inColony = ResearchTotalEngine.HasColony();
+            float row = rect.height / (inColony ? 3f : 2f);
+
+            DrawStatRow(new Rect(rect.x, rect.y, rect.width, row), "Vanilla Gravtech", Pts(vanilla) + "   ·   " + count + " projects", false);
+            DrawStatRow(new Rect(rect.x, rect.y + row, rect.width, row), "Scaled total", Pts(target) + "   ·   " + ratio.ToString("0.00") + "x", true);
+            if (!inColony)
+            {
+                return;
+            }
+
+            float spent = ResearchTotalEngine.CurrentSpentGravship();
             DrawStatRow(new Rect(rect.x, rect.y + row * 2f, rect.width, row), "Completed and Total", Pts(spent) + " / " + Pts(target), false);
         }
 
@@ -487,6 +731,13 @@ namespace ResearchTotal
             settings.roundAnomalyTo = Mathf.Clamp(Mathf.Round(settings.roundAnomalyTo), 1f, 10000f);
             settings.anomalyBasic = ResearchTotalSettings.ClampEra(settings.anomalyBasic, 1.00f);
             settings.anomalyAdvanced = ResearchTotalSettings.ClampEra(settings.anomalyAdvanced, 1.50f);
+            settings.targetGravshipPoints = Mathf.Clamp(settings.targetGravshipPoints, FloorGravship(), ResearchTotalEngine.MaxBudget);
+            settings.roundGravshipTo = Mathf.Clamp(Mathf.Round(settings.roundGravshipTo), 1f, 10000f);
+            settings.gravNeolithic = ResearchTotalSettings.ClampEra(settings.gravNeolithic, 1.00f);
+            settings.gravMedieval = ResearchTotalSettings.ClampEra(settings.gravMedieval, 1.15f);
+            settings.gravIndustrial = ResearchTotalSettings.ClampEra(settings.gravIndustrial, 1.50f);
+            settings.gravSpacer = ResearchTotalSettings.ClampEra(settings.gravSpacer, 2.00f);
+            settings.gravUltra = ResearchTotalSettings.ClampEra(settings.gravUltra, 2.50f);
         }
 
         private static float Floor()
@@ -499,26 +750,60 @@ namespace ResearchTotal
             return Mathf.Max(1f, ResearchTotalEngine.VanillaAnomalyTotal());
         }
 
+        private static float FloorGravship()
+        {
+            return Mathf.Max(1f, ResearchTotalEngine.VanillaGravshipTotal());
+        }
+
         private static float TableBlockHeight(int rows)
         {
             int n = Mathf.Max(1, rows);
             return 12f + 22f + (n + 1) * 24f + 12f;
         }
 
-        private float MeasureContentHeight()
+        private static float HeaderBlockHeight()
         {
-            float h = 36f + 12f + 24f + 38f + 40f + 24f + 40f;
-            h += TableBlockHeight(ResearchTotalEngine.BuildEraSlices().Count) + 8f;
-            h += ResearchTotalEngine.HasColony() ? 72f : 52f;
-            if (ResearchTotalEngine.AnomalyActive())
+            Text.Font = GameFont.Medium;
+            float h = Text.LineHeight + 8f + 16f;
+            Text.Font = GameFont.Small;
+            return h;
+        }
+
+        private float MeasureContentHeight(float width)
+        {
+            float h = HeaderBlockHeight();
+            if (standardExpanded)
             {
-                h += 8f + 16f;
-                h += 22f + 36f + 36f + 24f + 38f + 40f + 24f + 40f;
-                h += TableBlockHeight(ResearchTotalEngine.BuildAnomalySlices().Count) + 8f;
+                h += 36f + 12f + 24f + 38f + 40f + 24f + 40f;
+                h += TableBlockHeight(ResearchTotalEngine.BuildEraSlices().Count) + 8f;
                 h += ResearchTotalEngine.HasColony() ? 72f : 52f;
             }
 
-            h += 8f + 28f + 12f;
+            if (ResearchTotalEngine.AnomalyActive())
+            {
+                h += 8f + HeaderBlockHeight();
+                if (anomalyExpanded)
+                {
+                    h += NoteHeight(AnomalyNote, width);
+                    h += 36f + 24f + 38f + 40f + 24f + 40f;
+                    h += TableBlockHeight(ResearchTotalEngine.BuildAnomalySlices().Count) + 8f;
+                    h += ResearchTotalEngine.HasColony() ? 72f : 52f;
+                }
+            }
+
+            if (ResearchTotalEngine.GravshipActive())
+            {
+                h += 8f + HeaderBlockHeight();
+                if (gravshipExpanded)
+                {
+                    h += NoteHeight(GravshipNote, width);
+                    h += 36f + 12f + 24f + 38f + 40f + 24f + 40f;
+                    h += TableBlockHeight(ResearchTotalEngine.BuildGravshipSlices().Count) + 8f;
+                    h += ResearchTotalEngine.HasColony() ? 72f : 52f;
+                }
+            }
+
+            h += 16f;
             return h;
         }
 

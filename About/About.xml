@@ -26,6 +26,8 @@ Vanilla's tech-level penalty still applies: researching ahead of your colony's t
 
 Anomaly dark study is separate. Those projects cost knowledge from studying entities, not bench research points, so they are not part of the main total. Vanilla Anomaly is about 1,280 knowledge for the whole tree. Set a knowledge target in the Anomaly section; Basic and Advanced keep their own weights, and the usual tech-level penalty does not apply.
 
+Vanilla Gravship Expanded Gravtech is also separate when that mod is installed. Gravtech uses gravdata instead of the research bench, so it has its own target, rounding, and era weights.
+
 Incompatible with Research Inflation. I recommend you start a new game; you may get some weird costs if you don't, but it won't break anything.
 
 Please give me feedback, I would really like to know if you found a 5 million research point game hard or easy.
@@ -43,6 +45,7 @@ How high do you dare go?</description>
     <li>OskarPotocki.VFE.Tribals</li>
     <li>ferny.progressioncore</li>
     <li>ferny.generallymoreresearch</li>
+    <li>vanillaexpanded.gravship</li>
   </loadAfter>
   <incompatibleWith>
     <li>cruesoe.research.inflation</li>

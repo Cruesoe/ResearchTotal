@@ -8,6 +8,7 @@ namespace ResearchTotal
     {
         public float spentApparent;
         public float spentAnomaly;
+        public float spentGravship;
         public TechLevel lastTechLevel = TechLevel.Undefined;
         public bool ready;
         public Dictionary<ResearchProjectDef, float> assignedCosts = new Dictionary<ResearchProjectDef, float>();
@@ -22,6 +23,7 @@ namespace ResearchTotal
         {
             Scribe_Values.Look(ref spentApparent, "spentApparent", 0f);
             Scribe_Values.Look(ref spentAnomaly, "spentAnomaly", 0f);
+            Scribe_Values.Look(ref spentGravship, "spentGravship", 0f);
             Scribe_Values.Look(ref lastTechLevel, "lastTechLevel", TechLevel.Undefined);
             Scribe_Collections.Look(ref assignedCosts, "assignedCosts", LookMode.Def, LookMode.Value);
             Scribe_Collections.Look(ref finishedProjects, "finishedProjects", LookMode.Def);

@@ -1,0 +1,10 @@
+﻿{
+    "name":  "Research: Total",
+    "assemblyName":  "ResearchTotal",
+    "workshopFolder":  "Research Total",
+    "gameVersion":  "1.6",
+    "ship":  [
+                 "1.6",
+                 "About"
+             ]
+}

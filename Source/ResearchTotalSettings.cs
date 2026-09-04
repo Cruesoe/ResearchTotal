@@ -7,6 +7,7 @@ namespace ResearchTotal
         public float targetPoints = 1000000f;
         public float roundTo = 10f;
 
+        public float eraAnimal = 1.00f;
         public float eraNeolithic = 1.00f;
         public float eraMedieval = 1.15f;
         public float eraIndustrial = 1.50f;
@@ -30,6 +31,7 @@ namespace ResearchTotal
         {
             targetPoints = 1000000f;
             roundTo = 10f;
+            eraAnimal = 1.00f;
             eraNeolithic = 1.00f;
             eraMedieval = 1.15f;
             eraIndustrial = 1.50f;
@@ -68,6 +70,7 @@ namespace ResearchTotal
             base.ExposeData();
             Scribe_Values.Look(ref targetPoints, "targetPoints", -1f);
             Scribe_Values.Look(ref roundTo, "roundTo", -1f);
+            Scribe_Values.Look(ref eraAnimal, "eraAnimal", 1.00f);
             Scribe_Values.Look(ref eraNeolithic, "eraNeolithic", 1.00f);
             Scribe_Values.Look(ref eraMedieval, "eraMedieval", 1.15f);
             Scribe_Values.Look(ref eraIndustrial, "eraIndustrial", 1.50f);
@@ -114,6 +117,7 @@ namespace ResearchTotal
                 roundTo = 10000f;
             }
 
+            eraAnimal = ClampEra(eraAnimal, 1.00f);
             eraNeolithic = ClampEra(eraNeolithic, 1.00f);
             eraMedieval = ClampEra(eraMedieval, 1.15f);
             eraIndustrial = ClampEra(eraIndustrial, 1.50f);

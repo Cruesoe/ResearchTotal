@@ -31,7 +31,6 @@ namespace ResearchTotal
             }
 
             ResearchTotalEngine.NotifyProjectFinished(proj);
-            ResearchTotalEngine.SnapFinishedProgress();
         }
 
         public static void Postfix(ResearchProjectDef proj, Dictionary<ResearchProjectDef, float> ___progress)

@@ -3,7 +3,7 @@
   <name>Research: Total</name>
   <author>Cruesoe</author>
   <packageId>cruesoe.research.total</packageId>
-  <modVersion IgnoreIfNoMatchingField="True">0.2.0</modVersion>
+  <modVersion IgnoreIfNoMatchingField="True">260904</modVersion>
   <supportedVersions>
     <li>1.6</li>
   </supportedVersions>
@@ -20,7 +20,7 @@ Set a total in settings and all research projects are adjusted so the overall tr
 
 How it works
 
-Each tech keeps its vanilla proportions, then era weights decide how much of the remaining budget that era gets. Later eras take a larger share by default (Neolithic 1.0, Medieval 1.15, Industrial 1.5, Spacer 2.0, Ultra 2.5) because research gets faster as you unlock better benches. You can change those weights in settings.
+Each tech keeps its vanilla proportions, then era weights decide how much of the remaining budget that era gets. Later eras take a larger share by default (Neolithic 1.0, Medieval 1.15, Industrial 1.5, Spacer 2.0, Ultra 2.5) because research gets faster as you unlock better benches. You can change those weights in settings. Vanilla Factions Expanded - Tribals adds an Animal/Basic era before Neolithic; it gets its own row and weight (1.0 by default) when that mod is installed.
 
 Vanilla's tech-level penalty still applies: researching ahead of your colony's tech level takes longer. If you use a mod that raises your faction tech level (for example Tech Advancing), finished techs keep the cost they already had. Unfinished techs are recosted so whatever budget is left still adds up to your total.
 

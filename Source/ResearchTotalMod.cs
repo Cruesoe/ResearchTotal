@@ -23,6 +23,7 @@ namespace ResearchTotal
 
         private string targetBuffer;
         private string roundBuffer;
+        private string bufferAni;
         private string bufferNeo;
         private string bufferMed;
         private string bufferInd;
@@ -79,8 +80,14 @@ namespace ResearchTotal
 
             lastSettingsFrame = Time.frameCount;
 
+            bool anomalyActive = ResearchTotalEngine.AnomalyActive();
+            bool gravshipActive = ResearchTotalEngine.GravshipActive();
+            List<EraSlice> eraSlices = standardExpanded ? ResearchTotalEngine.BuildEraSlices() : null;
+            List<EraSlice> anomalySlices = anomalyActive && anomalyExpanded ? ResearchTotalEngine.BuildAnomalySlices() : null;
+            List<EraSlice> gravshipSlices = gravshipActive && gravshipExpanded ? ResearchTotalEngine.BuildGravshipSlices() : null;
+
             float contentWidth = inRect.width - 16f;
-            float contentHeight = MeasureContentHeight(contentWidth);
+            float contentHeight = MeasureContentHeight(contentWidth, eraSlices, anomalySlices, gravshipSlices);
             Rect viewRect = new Rect(0f, 0f, contentWidth, Mathf.Max(contentHeight, inRect.height));
             Widgets.BeginScrollView(inRect, ref scrollPosition, viewRect);
 
@@ -89,26 +96,26 @@ namespace ResearchTotal
             y = DrawSectionHeader(y, w, "Standard Research", "Bench research. All standard techs scale to this total. Anomaly knowledge and Gravtech are separate when those mods are active.", "Reset Standard Research to defaults.", ref standardExpanded, ResetStandardSection);
             if (standardExpanded)
             {
-                y = DrawStandardSection(new Rect(0f, y, w, 1f));
+                y = DrawStandardSection(new Rect(0f, y, w, 1f), eraSlices);
             }
 
-            if (ResearchTotalEngine.AnomalyActive())
+            if (anomalyActive)
             {
                 y += 8f;
                 y = DrawSectionHeader(y, w, "Anomaly", "Dark study uses knowledge, not bench research points. This total is separate from the tech tree. Tech-level penalties do not apply.", "Reset Anomaly to defaults.", ref anomalyExpanded, ResetAnomalySection);
                 if (anomalyExpanded)
                 {
-                    y = DrawAnomalySection(new Rect(0f, y, w, 1f));
+                    y = DrawAnomalySection(new Rect(0f, y, w, 1f), anomalySlices);
                 }
             }
 
-            if (ResearchTotalEngine.GravshipActive())
+            if (gravshipActive)
             {
                 y += 8f;
                 y = DrawSectionHeader(y, w, "Vanilla Gravship Expanded", "Gravtech research from Vanilla Gravship Expanded. This total is separate from the main tech tree.", "Reset Vanilla Gravship Expanded to defaults.", ref gravshipExpanded, ResetGravshipSection);
                 if (gravshipExpanded)
                 {
-                    y = DrawGravshipSection(new Rect(0f, y, w, 1f));
+                    y = DrawGravshipSection(new Rect(0f, y, w, 1f), gravshipSlices);
                 }
             }
 
@@ -177,6 +184,7 @@ namespace ResearchTotal
             settings.ResetStandard();
             targetBuffer = null;
             roundBuffer = null;
+            bufferAni = null;
             bufferNeo = null;
             bufferMed = null;
             bufferInd = null;
@@ -217,7 +225,7 @@ namespace ResearchTotal
             }
         }
 
-        private float DrawStandardSection(Rect start)
+        private float DrawStandardSection(Rect start, List<EraSlice> eraSlices)
         {
             float y = start.y;
             float w = start.width;
@@ -248,10 +256,10 @@ namespace ResearchTotal
             DrawEraWeights(new Rect(start.x, y, w, 28f));
             y += 40f;
 
-            float tableH = TableBlockHeight(ResearchTotalEngine.BuildEraSlices().Count);
+            float tableH = TableBlockHeight(eraSlices.Count);
             Rect eras = new Rect(start.x, y, w, tableH);
             Widgets.DrawMenuSection(eras);
-            DrawEraTable(eras.ContractedBy(12f, 6f), ResearchTotalEngine.BuildEraSlices(), "Era");
+            DrawEraTable(eras.ContractedBy(12f, 6f), eraSlices, "Era");
             y += tableH + 8f;
 
             float summaryH = ResearchTotalEngine.HasColony() ? 72f : 52f;
@@ -262,7 +270,7 @@ namespace ResearchTotal
             return y;
         }
 
-        private float DrawAnomalySection(Rect start)
+        private float DrawAnomalySection(Rect start, List<EraSlice> anomalySlices)
         {
             float y = start.y;
             float w = start.width;
@@ -291,10 +299,10 @@ namespace ResearchTotal
             DrawAnomalyWeights(new Rect(start.x, y, w, 28f));
             y += 40f;
 
-            float tableH = TableBlockHeight(ResearchTotalEngine.BuildAnomalySlices().Count);
+            float tableH = TableBlockHeight(anomalySlices.Count);
             Rect table = new Rect(start.x, y, w, tableH);
             Widgets.DrawMenuSection(table);
-            DrawEraTable(table.ContractedBy(12f, 6f), ResearchTotalEngine.BuildAnomalySlices(), "Category");
+            DrawEraTable(table.ContractedBy(12f, 6f), anomalySlices, "Category");
             y += tableH + 8f;
 
             float summaryH = ResearchTotalEngine.HasColony() ? 72f : 52f;
@@ -305,7 +313,7 @@ namespace ResearchTotal
             return y;
         }
 
-        private float DrawGravshipSection(Rect start)
+        private float DrawGravshipSection(Rect start, List<EraSlice> gravshipSlices)
         {
             float y = start.y;
             float w = start.width;
@@ -337,10 +345,10 @@ namespace ResearchTotal
             DrawGravshipWeights(new Rect(start.x, y, w, 28f));
             y += 40f;
 
-            float tableH = TableBlockHeight(ResearchTotalEngine.BuildGravshipSlices().Count);
+            float tableH = TableBlockHeight(gravshipSlices.Count);
             Rect eras = new Rect(start.x, y, w, tableH);
             Widgets.DrawMenuSection(eras);
-            DrawEraTable(eras.ContractedBy(12f, 6f), ResearchTotalEngine.BuildGravshipSlices(), "Era");
+            DrawEraTable(eras.ContractedBy(12f, 6f), gravshipSlices, "Era");
             y += tableH + 8f;
 
             float summaryH = ResearchTotalEngine.HasColony() ? 72f : 52f;
@@ -546,13 +554,26 @@ namespace ResearchTotal
 
         private void DrawEraWeights(Rect rect)
         {
+            bool tribals = ResearchTotalEngine.TribalsActive();
+            int count = tribals ? 6 : 5;
             float gap = 6f;
-            float w = (rect.width - gap * 4f) / 5f;
-            DrawEraField(new Rect(rect.x, rect.y, w, rect.height), "Neo", ref settings.eraNeolithic, ref bufferNeo);
-            DrawEraField(new Rect(rect.x + (w + gap), rect.y, w, rect.height), "Med", ref settings.eraMedieval, ref bufferMed);
-            DrawEraField(new Rect(rect.x + (w + gap) * 2f, rect.y, w, rect.height), "Ind", ref settings.eraIndustrial, ref bufferInd);
-            DrawEraField(new Rect(rect.x + (w + gap) * 3f, rect.y, w, rect.height), "Spa", ref settings.eraSpacer, ref bufferSpa);
-            DrawEraField(new Rect(rect.x + (w + gap) * 4f, rect.y, w, rect.height), "Ultra", ref settings.eraUltra, ref bufferUlt);
+            float w = (rect.width - gap * (count - 1)) / count;
+            float x = rect.x;
+            if (tribals)
+            {
+                DrawEraField(new Rect(x, rect.y, w, rect.height), "Ani", ref settings.eraAnimal, ref bufferAni);
+                x += w + gap;
+            }
+
+            DrawEraField(new Rect(x, rect.y, w, rect.height), "Neo", ref settings.eraNeolithic, ref bufferNeo);
+            x += w + gap;
+            DrawEraField(new Rect(x, rect.y, w, rect.height), "Med", ref settings.eraMedieval, ref bufferMed);
+            x += w + gap;
+            DrawEraField(new Rect(x, rect.y, w, rect.height), "Ind", ref settings.eraIndustrial, ref bufferInd);
+            x += w + gap;
+            DrawEraField(new Rect(x, rect.y, w, rect.height), "Spa", ref settings.eraSpacer, ref bufferSpa);
+            x += w + gap;
+            DrawEraField(new Rect(x, rect.y, w, rect.height), "Ultra", ref settings.eraUltra, ref bufferUlt);
         }
 
         private static void DrawEraField(Rect rect, string label, ref float value, ref string buffer)
@@ -722,6 +743,7 @@ namespace ResearchTotal
         {
             settings.targetPoints = Mathf.Clamp(settings.targetPoints, Floor(), ResearchTotalEngine.MaxBudget);
             settings.roundTo = Mathf.Clamp(Mathf.Round(settings.roundTo), 1f, 10000f);
+            settings.eraAnimal = ResearchTotalSettings.ClampEra(settings.eraAnimal, 1.00f);
             settings.eraNeolithic = ResearchTotalSettings.ClampEra(settings.eraNeolithic, 1.00f);
             settings.eraMedieval = ResearchTotalSettings.ClampEra(settings.eraMedieval, 1.15f);
             settings.eraIndustrial = ResearchTotalSettings.ClampEra(settings.eraIndustrial, 1.50f);
@@ -769,13 +791,13 @@ namespace ResearchTotal
             return h;
         }
 
-        private float MeasureContentHeight(float width)
+        private float MeasureContentHeight(float width, List<EraSlice> eraSlices, List<EraSlice> anomalySlices, List<EraSlice> gravshipSlices)
         {
             float h = HeaderBlockHeight();
             if (standardExpanded)
             {
                 h += 36f + 12f + 24f + 38f + 40f + 24f + 40f;
-                h += TableBlockHeight(ResearchTotalEngine.BuildEraSlices().Count) + 8f;
+                h += TableBlockHeight(eraSlices.Count) + 8f;
                 h += ResearchTotalEngine.HasColony() ? 72f : 52f;
             }
 
@@ -786,7 +808,7 @@ namespace ResearchTotal
                 {
                     h += NoteHeight(AnomalyNote, width);
                     h += 36f + 24f + 38f + 40f + 24f + 40f;
-                    h += TableBlockHeight(ResearchTotalEngine.BuildAnomalySlices().Count) + 8f;
+                    h += TableBlockHeight(anomalySlices.Count) + 8f;
                     h += ResearchTotalEngine.HasColony() ? 72f : 52f;
                 }
             }
@@ -798,7 +820,7 @@ namespace ResearchTotal
                 {
                     h += NoteHeight(GravshipNote, width);
                     h += 36f + 12f + 24f + 38f + 40f + 24f + 40f;
-                    h += TableBlockHeight(ResearchTotalEngine.BuildGravshipSlices().Count) + 8f;
+                    h += TableBlockHeight(gravshipSlices.Count) + 8f;
                     h += ResearchTotalEngine.HasColony() ? 72f : 52f;
                 }
             }

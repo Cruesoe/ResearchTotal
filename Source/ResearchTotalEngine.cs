@@ -32,9 +32,15 @@ namespace ResearchTotal
     {
         public const float MaxBudget = 100000000f;
         public const string GravshipPackageId = "vanillaexpanded.gravship";
+        public const string TribalsPackageId = "OskarPotocki.VFE.Tribals";
 
         private static readonly FieldInfo ProgressField = AccessTools.Field(typeof(ResearchManager), "progress");
         private static readonly Dictionary<ResearchProjectDef, float> originalCosts = new Dictionary<ResearchProjectDef, float>();
+        private static readonly Dictionary<ResearchProjectDef, ResearchPool> poolByProject = new Dictionary<ResearchProjectDef, ResearchPool>();
+        private static readonly List<ResearchProjectDef> includedProjects = new List<ResearchProjectDef>();
+        private static readonly List<ResearchProjectDef> standardProjects = new List<ResearchProjectDef>();
+        private static readonly List<ResearchProjectDef> anomalyProjects = new List<ResearchProjectDef>();
+        private static readonly List<ResearchProjectDef> gravshipProjects = new List<ResearchProjectDef>();
         private static FieldInfo gravtechProjectField;
         private static bool gravtechFieldResolved;
 
@@ -58,12 +64,32 @@ namespace ResearchTotal
                     if (proj.knowledgeCost > 0f)
                     {
                         originalCosts[proj] = proj.knowledgeCost;
+                        RegisterIncluded(proj, ResearchPool.Anomaly);
                     }
                 }
                 else if (proj.baseCost > 0f)
                 {
                     originalCosts[proj] = proj.baseCost;
+                    RegisterIncluded(proj, IsGravshipProject(proj) ? ResearchPool.Gravship : ResearchPool.Standard);
                 }
+            }
+        }
+
+        private static void RegisterIncluded(ResearchProjectDef proj, ResearchPool pool)
+        {
+            poolByProject[proj] = pool;
+            includedProjects.Add(proj);
+            switch (pool)
+            {
+                case ResearchPool.Anomaly:
+                    anomalyProjects.Add(proj);
+                    break;
+                case ResearchPool.Gravship:
+                    gravshipProjects.Add(proj);
+                    break;
+                default:
+                    standardProjects.Add(proj);
+                    break;
             }
         }
 
@@ -86,6 +112,11 @@ namespace ResearchTotal
         public static bool GravshipActive()
         {
             return ModsConfig.IsActive(GravshipPackageId);
+        }
+
+        public static bool TribalsActive()
+        {
+            return ModsConfig.IsActive(TribalsPackageId);
         }
 
         public static bool IsGravshipProject(ResearchProjectDef proj)
@@ -119,6 +150,11 @@ namespace ResearchTotal
 
         public static ResearchPool PoolOf(ResearchProjectDef proj)
         {
+            if (proj != null && poolByProject.TryGetValue(proj, out ResearchPool pool))
+            {
+                return pool;
+            }
+
             if (IsAnomalyProject(proj))
             {
                 return ResearchPool.Anomaly;
@@ -185,7 +221,12 @@ namespace ResearchTotal
 
         public static float GetScaledCost(ResearchProjectDef proj)
         {
-            if (proj == null || !IsIncluded(proj) || current == null || !current.ready)
+            if (proj == null || current == null || !current.ready)
+            {
+                return -1f;
+            }
+
+            if (!originalCosts.TryGetValue(proj, out float original))
             {
                 return -1f;
             }
@@ -195,7 +236,7 @@ namespace ResearchTotal
                 return assigned;
             }
 
-            return OriginalCost(proj);
+            return original;
         }
 
         public static void InitializeForGame(GameComponent_ResearchTotal comp)
@@ -407,14 +448,10 @@ namespace ResearchTotal
         {
             TechLevel tech = PlayerTechLevel();
             float total = 0f;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < standardProjects.Count; i++)
             {
-                ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && PoolOf(proj) == ResearchPool.Standard)
-                {
-                    total += OriginalCost(proj) * proj.CostFactor(tech);
-                }
+                ResearchProjectDef proj = standardProjects[i];
+                total += OriginalCost(proj) * proj.CostFactor(tech);
             }
 
             return total;
@@ -422,17 +459,7 @@ namespace ResearchTotal
 
         public static int IncludedCount()
         {
-            int count = 0;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                if (IsIncluded(all[i]) && PoolOf(all[i]) == ResearchPool.Standard)
-                {
-                    count++;
-                }
-            }
-
-            return count;
+            return standardProjects.Count;
         }
 
         public static float CurrentTarget()
@@ -489,14 +516,10 @@ namespace ResearchTotal
 
             TechLevel tech = PlayerTechLevel();
             float total = 0f;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < gravshipProjects.Count; i++)
             {
-                ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && IsGravshipProject(proj))
-                {
-                    total += OriginalCost(proj) * proj.CostFactor(tech);
-                }
+                ResearchProjectDef proj = gravshipProjects[i];
+                total += OriginalCost(proj) * proj.CostFactor(tech);
             }
 
             return total;
@@ -504,22 +527,7 @@ namespace ResearchTotal
 
         public static int GravshipCount()
         {
-            if (!GravshipActive())
-            {
-                return 0;
-            }
-
-            int count = 0;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                if (IsIncluded(all[i]) && IsGravshipProject(all[i]))
-                {
-                    count++;
-                }
-            }
-
-            return count;
+            return GravshipActive() ? gravshipProjects.Count : 0;
         }
 
         public static float CurrentSpentGravship()
@@ -535,14 +543,9 @@ namespace ResearchTotal
             }
 
             float total = 0f;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < anomalyProjects.Count; i++)
             {
-                ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && IsAnomalyProject(proj))
-                {
-                    total += OriginalCost(proj);
-                }
+                total += OriginalCost(anomalyProjects[i]);
             }
 
             return total;
@@ -550,22 +553,7 @@ namespace ResearchTotal
 
         public static int AnomalyCount()
         {
-            if (!AnomalyActive())
-            {
-                return 0;
-            }
-
-            int count = 0;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                if (IsIncluded(all[i]) && IsAnomalyProject(all[i]))
-                {
-                    count++;
-                }
-            }
-
-            return count;
+            return AnomalyActive() ? anomalyProjects.Count : 0;
         }
 
         public static float CurrentSpentAnomaly()
@@ -584,6 +572,12 @@ namespace ResearchTotal
             switch (proj.techLevel)
             {
                 case TechLevel.Animal:
+                    if (TribalsActive() && !IsGravshipProject(proj))
+                    {
+                        return s.eraAnimal;
+                    }
+
+                    return IsGravshipProject(proj) ? s.gravNeolithic : s.eraNeolithic;
                 case TechLevel.Neolithic:
                     return IsGravshipProject(proj) ? s.gravNeolithic : s.eraNeolithic;
                 case TechLevel.Medieval:
@@ -630,25 +624,16 @@ namespace ResearchTotal
             }
 
             float weightSum = 0f;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            List<ResearchProjectDef> included = new List<ResearchProjectDef>();
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < anomalyProjects.Count; i++)
             {
-                ResearchProjectDef proj = all[i];
-                if (!IsIncluded(proj) || !IsAnomalyProject(proj))
-                {
-                    continue;
-                }
-
-                included.Add(proj);
-                weightSum += AllocationWeight(proj, TechLevel.Undefined);
+                weightSum += AllocationWeight(anomalyProjects[i], TechLevel.Undefined);
             }
 
             float target = EffectiveAnomalyTarget();
             float step = AnomalyRoundStep();
-            for (int i = 0; i < included.Count; i++)
+            for (int i = 0; i < anomalyProjects.Count; i++)
             {
-                ResearchProjectDef proj = included[i];
+                ResearchProjectDef proj = anomalyProjects[i];
                 EraSlice slice = buckets[AnomalyIndex(proj)];
                 slice.count++;
                 slice.vanilla += OriginalCost(proj);
@@ -675,36 +660,38 @@ namespace ResearchTotal
 
         public static List<EraSlice> BuildEraSlices()
         {
-            EraSlice[] buckets =
-            {
-                new EraSlice("Neolithic"),
-                new EraSlice("Medieval"),
-                new EraSlice("Industrial"),
-                new EraSlice("Spacer"),
-                new EraSlice("Ultra")
-            };
+            bool tribals = TribalsActive();
+            EraSlice[] buckets = tribals
+                ? new[]
+                {
+                    new EraSlice("Animal"),
+                    new EraSlice("Neolithic"),
+                    new EraSlice("Medieval"),
+                    new EraSlice("Industrial"),
+                    new EraSlice("Spacer"),
+                    new EraSlice("Ultra")
+                }
+                : new[]
+                {
+                    new EraSlice("Neolithic"),
+                    new EraSlice("Medieval"),
+                    new EraSlice("Industrial"),
+                    new EraSlice("Spacer"),
+                    new EraSlice("Ultra")
+                };
 
             TechLevel tech = PlayerTechLevel();
             float weightSum = 0f;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            List<ResearchProjectDef> included = new List<ResearchProjectDef>();
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < standardProjects.Count; i++)
             {
-                ResearchProjectDef proj = all[i];
-                if (!IsIncluded(proj) || PoolOf(proj) != ResearchPool.Standard)
-                {
-                    continue;
-                }
-
-                included.Add(proj);
-                weightSum += AllocationWeight(proj, tech);
+                weightSum += AllocationWeight(standardProjects[i], tech);
             }
 
             float target = EffectiveTarget();
-            for (int i = 0; i < included.Count; i++)
+            for (int i = 0; i < standardProjects.Count; i++)
             {
-                ResearchProjectDef proj = included[i];
-                EraSlice slice = buckets[EraIndex(proj.techLevel)];
+                ResearchProjectDef proj = standardProjects[i];
+                EraSlice slice = buckets[StandardEraIndex(proj.techLevel)];
                 slice.count++;
                 float factor = proj.CostFactor(tech);
                 slice.vanilla += OriginalCost(proj) * factor;
@@ -718,7 +705,7 @@ namespace ResearchTotal
                 }
             }
 
-            List<EraSlice> list = new List<EraSlice>(5);
+            List<EraSlice> list = new List<EraSlice>(buckets.Length);
             for (int i = 0; i < buckets.Length; i++)
             {
                 if (buckets[i].count > 0)
@@ -748,25 +735,16 @@ namespace ResearchTotal
 
             TechLevel tech = PlayerTechLevel();
             float weightSum = 0f;
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            List<ResearchProjectDef> included = new List<ResearchProjectDef>();
-            for (int i = 0; i < all.Count; i++)
+            for (int i = 0; i < gravshipProjects.Count; i++)
             {
-                ResearchProjectDef proj = all[i];
-                if (!IsIncluded(proj) || !IsGravshipProject(proj))
-                {
-                    continue;
-                }
-
-                included.Add(proj);
-                weightSum += AllocationWeight(proj, tech);
+                weightSum += AllocationWeight(gravshipProjects[i], tech);
             }
 
             float target = EffectiveGravshipTarget();
             float step = GravshipRoundStep();
-            for (int i = 0; i < included.Count; i++)
+            for (int i = 0; i < gravshipProjects.Count; i++)
             {
-                ResearchProjectDef proj = included[i];
+                ResearchProjectDef proj = gravshipProjects[i];
                 EraSlice slice = buckets[EraIndex(proj.techLevel)];
                 slice.count++;
                 float factor = proj.CostFactor(tech);
@@ -813,6 +791,33 @@ namespace ResearchTotal
             }
 
             return OriginalCost(proj) * proj.CostFactor(colonyTech) * EraWeight(proj);
+        }
+
+        private static int StandardEraIndex(TechLevel level)
+        {
+            if (TribalsActive())
+            {
+                switch (level)
+                {
+                    case TechLevel.Animal:
+                        return 0;
+                    case TechLevel.Neolithic:
+                        return 1;
+                    case TechLevel.Medieval:
+                        return 2;
+                    case TechLevel.Industrial:
+                        return 3;
+                    case TechLevel.Spacer:
+                        return 4;
+                    case TechLevel.Ultra:
+                    case TechLevel.Archotech:
+                        return 5;
+                    default:
+                        return 1;
+                }
+            }
+
+            return EraIndex(level);
         }
 
         private static int EraIndex(TechLevel level)
@@ -1191,75 +1196,22 @@ namespace ResearchTotal
 
         private static List<ResearchProjectDef> CollectIncluded()
         {
-            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                if (IsIncluded(all[i]))
-                {
-                    list.Add(all[i]);
-                }
-            }
-
-            return list;
+            return new List<ResearchProjectDef>(includedProjects);
         }
 
         private static List<ResearchProjectDef> CollectStandard()
         {
-            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && PoolOf(proj) == ResearchPool.Standard)
-                {
-                    list.Add(proj);
-                }
-            }
-
-            return list;
+            return new List<ResearchProjectDef>(standardProjects);
         }
 
         private static List<ResearchProjectDef> CollectAnomaly()
         {
-            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
-            if (!AnomalyActive())
-            {
-                return list;
-            }
-
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && IsAnomalyProject(proj))
-                {
-                    list.Add(proj);
-                }
-            }
-
-            return list;
+            return AnomalyActive() ? new List<ResearchProjectDef>(anomalyProjects) : new List<ResearchProjectDef>();
         }
 
         private static List<ResearchProjectDef> CollectGravship()
         {
-            List<ResearchProjectDef> list = new List<ResearchProjectDef>();
-            if (!GravshipActive())
-            {
-                return list;
-            }
-
-            List<ResearchProjectDef> all = DefDatabase<ResearchProjectDef>.AllDefsListForReading;
-            for (int i = 0; i < all.Count; i++)
-            {
-                ResearchProjectDef proj = all[i];
-                if (IsIncluded(proj) && IsGravshipProject(proj))
-                {
-                    list.Add(proj);
-                }
-            }
-
-            return list;
+            return GravshipActive() ? new List<ResearchProjectDef>(gravshipProjects) : new List<ResearchProjectDef>();
         }
 
         private static void CollectFrozen(List<ResearchProjectDef> frozen, ResearchPool pool)

@@ -93,8 +93,9 @@ namespace ResearchTotal
 
             float y = 0f;
             float w = viewRect.width;
+            bool standardWasExpanded = standardExpanded;
             y = DrawSectionHeader(y, w, "Standard Research", "Bench research. All standard techs scale to this total. Anomaly knowledge and Gravtech are separate when those mods are active.", "Reset Standard Research to defaults.", ref standardExpanded, ResetStandardSection);
-            if (standardExpanded)
+            if (standardWasExpanded)
             {
                 y = DrawStandardSection(new Rect(0f, y, w, 1f), eraSlices);
             }
@@ -102,8 +103,9 @@ namespace ResearchTotal
             if (anomalyActive)
             {
                 y += 8f;
+                bool anomalyWasExpanded = anomalyExpanded;
                 y = DrawSectionHeader(y, w, "Anomaly", "Dark study uses knowledge, not bench research points. This total is separate from the tech tree. Tech-level penalties do not apply.", "Reset Anomaly to defaults.", ref anomalyExpanded, ResetAnomalySection);
-                if (anomalyExpanded)
+                if (anomalyWasExpanded)
                 {
                     y = DrawAnomalySection(new Rect(0f, y, w, 1f), anomalySlices);
                 }
@@ -112,8 +114,9 @@ namespace ResearchTotal
             if (gravshipActive)
             {
                 y += 8f;
+                bool gravshipWasExpanded = gravshipExpanded;
                 y = DrawSectionHeader(y, w, "Vanilla Gravship Expanded", "Gravtech research from Vanilla Gravship Expanded. This total is separate from the main tech tree.", "Reset Vanilla Gravship Expanded to defaults.", ref gravshipExpanded, ResetGravshipSection);
-                if (gravshipExpanded)
+                if (gravshipWasExpanded)
                 {
                     y = DrawGravshipSection(new Rect(0f, y, w, 1f), gravshipSlices);
                 }

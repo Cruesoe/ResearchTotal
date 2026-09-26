@@ -6,3 +6,10 @@ Source/obj/
 *.pdb
 Thumbs.db
 Desktop.ini
+
+# Local build files and agent notes, kept on disk but never tracked
+Directory.Build.props
+Directory.Build.targets
+*.slnx
+AGENTS.md
+CLAUDE.md

@@ -1,0 +1,23 @@
+Set how many research points the whole tech tree should cost. Every project scales to add up to that total.
+
+It's hard to scale up a tech tree, so I started looking at: what if it was about the total, not so much the cost of each tech? Is a 1 million research point game hard or easy? Is 5 million too much?
+
+Research speed is fairly consistent once you get gong so by setting a total game costs you are really saying how long do I want it to be before I get to the end of the tree.
+
+If you want to challenge yourself with a precise total-cost tech tree, give it a try.
+
+Set a total in settings and all research projects are adjusted so the overall tree costs exactly what you set (some small rounding errors may occur). Techs you start with are not affected; their costs are deducted from the total and the remainder is spread across the tree.
+
+[h1]How it works[/h1]
+Each tech keeps its vanilla proportions, then era weights decide how much of the remaining budget that era gets. Later eras take a larger share by default (Neolithic 1.0, Medieval 1.15, Industrial 1.5, Spacer 2.0, Ultra 2.5) because research gets faster as you unlock better benches. You can change those weights in settings.
+
+Vanilla's tech-level penalty still applies: researching ahead of your colony's tech level takes longer. If you use a mod that raises your faction tech level (for example Tech Advancing), finished techs keep the cost they already had. Unfinished techs are recosted so whatever budget is left still adds up to your total.
+
+Anomaly dark study is separate. Those projects cost knowledge from studying entities, not bench research points, so they are not part of the main total. Vanilla Anomaly is about 1,280 knowledge for the whole tree. Set a knowledge target in the Anomaly section; Basic and Advanced keep their own weights, and the usual tech-level penalty does not apply.
+
+Vanilla Gravship Expanded Gravtech is also separate when that mod is installed. Gravtech uses gravdata instead of the research bench, so it has its own target, rounding, and era weights.
+
+Incompatible with Research Inflation. I recommend you start a new game; you may get some weird costs if you don't, but it won't break anything.
+
+Please give me feedback, I would really like to know if you found a 5 million research point game hard or easy.
+How high do you dare go?
